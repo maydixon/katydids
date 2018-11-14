@@ -1,0 +1,278 @@
+---
+title: "katydids"
+author: "may"
+date: "September 30, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+ 
+ ###########Getting data in and categorized################
+ 
+```{r}
+ 
+# import
+library(readr)
+Compiled_24_hour_events_Pseudo <- read_csv("~/Dropbox/GLEANER UNIVERSE STUDY/call rates/Compiled 24 hour events Pseudo.csv")
+View(Compiled_24_hour_events_Pseudo)
+
+#make Species and ID factors:
+Compiled_24_hour_events_Pseudo$Species<-as.factor(Compiled_24_hour_events_Pseudo$Species )
+levels(Compiled_24_hour_events_Pseudo$Species)
+Compiled_24_hour_events_Pseudo$ID<- as.factor(Compiled_24_hour_events_Pseudo$ID)
+levels(Compiled_24_hour_events_Pseudo$ID)
+
+###########Getting data ordered right################
+#order by time
+Compiled_24_hour_events_Pseudo <- Compiled_24_hour_events_Pseudo[order(Compiled_24_hour_events_Pseudo$ID, Compiled_24_hour_events_Pseudo$Time),]
+
+###########Finding call rate ################
+# Call rate: the difference between the cell and the cell above, per individual. Column "Diff"
+
+#takes difference between cells/ ID
+Compiled_24_hour_events_Pseudo$Diff <- ave(Compiled_24_hour_events_Pseudo$Time, Compiled_24_hour_events_Pseudo$ID, FUN=function(x) c(0, diff(x)))
+
+#remove zeros
+Compiled_24_hour_events_Pseudo$Diff[Compiled_24_hour_events_Pseudo$Diff <= 0] <- NA
+
+##make one that is call interval in seconds
+Compiled_24_hour_events_Pseudo$Diff_sec <- Compiled_24_hour_events_Pseudo$Diff*60
+
+###########Finding averages and quantiles for call rate by Species and ID ################
+library(dplyr)
+
+## Averages call rates by ID and species ##
+
+#average by ID
+ID_avg<-Compiled_24_hour_events_Pseudo %>% group_by(ID) %>%
+      summarise(ID_average = mean(Diff_sec, na.rm=TRUE))
+ID_avg
+
+#average by species
+spc_avg<-Compiled_24_hour_events_Pseudo %>% group_by(Species) %>%
+      summarise(Species_average = mean(Diff_sec, na.rm=TRUE))
+spc_avg
+
+## Top 25% average call rate by species and ID ##
+
+#Top 25% average call rate by species
+Top25pct_Spc<-Compiled_24_hour_events_Pseudo %>% group_by(Species) %>%
+      summarise(meanfast25pct = (mean(Diff_sec[Diff_sec<=quantile(Diff_sec, 0.25, na.rm=TRUE)], na.rm=TRUE)))
+Top25pct_Spc 
+
+#Top 25% call rate by ID
+Top25pct_ID<-Compiled_24_hour_events_Pseudo %>% group_by(ID) %>%
+      summarise(meanfast25pct = mean(Diff_sec[Diff_sec<=quantile(Diff_sec, 0.25, na.rm=TRUE)], na.rm=TRUE))
+Top25pct_ID
+
+## Top 25% quantile value by ID and Species ##
+
+#Top 25% quantile by ID
+quantile25_Spc<-Compiled_24_hour_events_Pseudo %>% group_by(Species) %>%
+      summarise(quantile25 = quantile(Diff_sec, 0.25, na.rm=TRUE))
+quantile25_Spc
+	2q3
+#Top 25% quantile by ID
+quantile25_ID<-Compiled_24_hour_events_Pseudo %>% group_by(ID) %>%
+      summarise(quantile25 = quantile(Diff_sec, 0.25, na.rm=TRUE))
+quantile25_ID
+
+```
+
+```{r}
+
+#subset out doci_gigi
+#remove the 3 absurdly large values
+Comp_24_Doci <- subset(Compiled_24_hour_events_Pseudo, Compiled_24_hour_events_Pseudo$Species=="Doci gigli" & Compiled_24_hour_events_Pseudo$Diff_sec<= 1000)
+summary(Comp_24_Doci$Diff_sec)
+hist(Comp_24_Doci$Diff_sec, breaks =40) #can see the difference between the couplets and the other data
+hist(Comp_24_Doci$Diff_sec[Comp_24_Doci$Diff_sec<10], breaks =40) #higher resolution of the divide. All values below 2 are couplets
+
+#now take average of all valyes over 2 seconds to get real call interval
+
+Comp_24_Doci <- subset(Comp_24_Doci, Comp_24_Doci$Diff_sec >= 2)
+
+## Now get stats: 
+
+## Averages call rates by ID and species ##
+
+#average by ID
+ID_avg<-Comp_24_Doci %>% group_by(ID) %>%
+      summarise(ID_average = mean(Diff_sec, na.rm=TRUE))
+ID_avg #real similar, just going to look at species
+
+#average by species
+spc_avg<-Comp_24_Doci %>% group_by(Species) %>%
+      summarise(Species_average = mean(Diff_sec, na.rm=TRUE))
+spc_avg
+
+
+
+#Top 25% average call rate by species
+Top25pct_Spc<-Comp_24_Doci %>% group_by(Species) %>%
+      summarise(meanfast25pct = (mean(Diff_sec[Diff_sec<=quantile(Diff_sec, 0.25, na.rm=TRUE)], na.rm=TRUE)))
+Top25pct_Spc 
+
+
+#Top 25% quantile by Species
+quantile25_Spc<-Comp_24_Doci %>% group_by(Species) %>%
+      summarise(quantile25 = quantile(Diff_sec, 0.25, na.rm=TRUE))
+quantile25_Spc
+
+
+
+```
+
+Now with Viadana:
+
+```{r}
+library(readxl)
+Viadana_individual_events <- read_excel("~/Dropbox/GLEANER UNIVERSE STUDY/call rates/Viadana individual events.xlsx", 
++     col_types = c("text", "numeric", "numeric", 
++         "text", "numeric", "numeric", "numeric", 
++         "blank", "blank", "blank", "blank", 
++         "blank", "blank"))
+
+
+#make Species and ID factors:
+Viadana_individual_events$Species<-as.factor(Viadana_individual_events$Species )
+levels(Viadana_individual_events$Species)
+Viadana_individual_events$ID<- as.factor(Viadana_individual_events$ID)
+levels(Viadana_individual_events$ID)
+
+###########Getting data ordered right################
+#order by time
+Viadana_individual_events <- Viadana_individual_events[order(Viadana_individual_events$ID, Viadana_individual_events$Time),]
+
+###########Finding call rate ################
+# Call rate: the difference between the cell and the cell above, per individual. Column "Diff"
+
+#takes difference between cells/ ID
+Viadana_individual_events$Diff <- ave(Viadana_individual_events$Time, Viadana_individual_events$ID, FUN=function(x) c(0, diff(x)))
+
+#remove zeros
+Viadana_individual_events$Diff[Viadana_individual_events$Diff <= 0] <- NA
+
+##remove outlier high values
+Viadana_individual_events<- subset(Viadana_individual_events, Viadana_individual_events$Diff <=500)
+
+############ ##### #####  #####
+hist(Viadana_individual_events$Diff, breaks =40)
+hist(Viadana_individual_events$Diff[Viadana_individual_events$Diff < 100], breaks =40) #zoomed in
+hist(Viadana_individual_events$Diff[Viadana_individual_events$Diff < 20], breaks =40) #zoomed in
+hist(Viadana_individual_events$Diff[Viadana_individual_events$Diff < .5], breaks =40) #zoomed in
+
+#looks like couplets are in general about ##.005s## spaced, and that everything above about .2s  isn't a couplet, really. Though, Viadanna is remarkably variable! 
+
+#subset to exclude the couplets:
+
+Viadana_individual_events<- subset(Viadana_individual_events, Viadana_individual_events$Diff >=.2)
+hist(Viadana_individual_events$Diff)
+hist(Viadana_individual_events$Diff[Viadana_individual_events$Diff < 50], breaks =100) #zoomed in, still absurdly skewed, pretty much continuous
+
+
+
+```
+
+Via stats
+```{r}
+## Now get stats: 
+
+## Averages call rates by ID and species ##
+
+
+#average by ID
+ID_avg<-Viadana_individual_events %>% group_by(ID) %>%
+      summarise(ID_average = mean(Diff, na.rm=TRUE))
+ID_avg #real similar, just going to look at species
+
+#average by species
+spc_avg<-Viadana_individual_events %>% group_by(Species) %>%
+      summarise(Species_average = mean(Diff, na.rm=TRUE))
+spc_avg
+
+
+
+#Top 25% average call rate by species
+Top25pct_Spc<-Viadana_individual_events %>% group_by(Species) %>%
+      summarise(meanfast25pct = (mean(Diff[Diff<=quantile(Diff, 0.25, na.rm=TRUE)], na.rm=TRUE)))
+Top25pct_Spc 
+
+
+#Top 25% quantile by Species
+quantile25_Spc<-Viadana_individual_events %>% group_by(Species) %>%
+      summarise(quantile25 = quantile(Diff, 0.25, na.rm=TRUE))
+quantile25_Spc
+
+```
+
+```{r}
+## I think i should find the densest minute of active bout for each individual
+## maybe just cut down which minutes after noon I am using
+## and then divide it into lil calling bout and not lil calling bout
+## figure out interbout intervals (25pct shortest)
+#figure out intrabout intervals (50 pct average?)
+#figure out couplet intervals
+## and figure out roughtly the 25pctaverage numbers of calls in a bout
+
+
+
+
+## I think i should find the densest minute of active bouts, or just capture real active moments, 400:600 is a good section
+ Viadana_individual_events_act<- subset(Viadana_individual_events, Viadana_individual_events$Time >= 400 & Viadana_individual_events$Time <=600)
+
+
+
+## interbout intervals: 
+## call bouts are more than .2s apart
+
+# all the intervals greater than .2s:
+Viadana_individual_events_act
+hist(Viadana_individual_events_act$Diff[Viadana_individual_events_act$Diff < .2], breaks =40)
+
+Via_interbout_int_25mean<-Viadana_individual_events_act %>% filter(Diff >.2) %>% 
+      summarise(mean50pct = (mean(Diff[Diff<=quantile(Diff, 0.25, na.rm=TRUE)], na.rm=TRUE)))
+Via_interbout_int_25mean
+
+0.3749514
+
+
+# the intercall interval of a couplet:
+hist(Viadana_individual_events_act$Diff[Viadana_individual_events_act$Diff < .01], breaks =40)
+#pretty normal distribution between .0055 and .0082 with a mean at:
+Via_couplet_mean<-Viadana_individual_events_act %>% filter(Diff >= .0055 & Diff <=.0082) %>% 
+      summarise(meanfast25pct = (mean(Diff[Diff<=quantile(Diff, 0.25, na.rm=TRUE)], na.rm=TRUE)))
+Via_couplet_mean
+0.006272614
+
+
+#spacing of non-couplets (mean): (greater than high of couplet distribution, and less than the low of the intercallboat intercals):
+Via_intra_mean<-Viadana_individual_events_act %>% filter(Diff >= .009 & Diff <=.2) %>% 
+      summarise(meanfast25pct = (mean(Diff[Diff<=quantile(Diff, 0.5, na.rm=TRUE)], na.rm=TRUE)))
+Via_intra_mean
+0.02262776
+	
+
+## and figure out roughly the 75pctaverage numbers of calls in a bout
+      ##count number of consecutive less than .2s?
+
+via_ncall <- c(2,2,4,1,1,13, 7, 12, 4, 2, 6, 3, 8, 6, 3, 1)
+
+#75% mean
+mean(via_ncall[via_ncall>=quantile(via_ncall, .75, na.rm=TRUE)])
+
+10
+
+#mean
+mean(via_ncall)
+
+Via_interbout_int_25mean
+Via_couplet_mean
+Via_intra_mean
+mean(via_ncall)
+```
+
+
+

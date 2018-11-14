@@ -1,0 +1,121 @@
+---
+title: "Acoustic_universe_compiled"
+author: "may"
+date: "November 12, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+libraries
+```{r}
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(ggthemes)
+library(RColorBrewer)
+```
+
+```{r}
+g_u <- read_excel("~/Dropbox/gleaner_universe_compiled_r.xlsx", 
++     col_types = c("text", "text", "text", 
++         "text", "numeric", "numeric", "text", 
++         "text", "date", "numeric", "text"))
+```
+
+Palettes
+```{r}
+#theme: 
+TM <- theme_calc(base_size = 25) + theme(axis.text.x = element_text(angle = 45, hjust=1, size = 14))
+
+
+TM1 <- theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+PL <-  "Spectral"
+
+#+ theme(axis.text.x = element_text(angle = 45, hjust=1, size = 14), legend.position = "none") #format x-axis, and remove side legend #hjust 1 aligns labels
+```
+
+
+```{r}
+unique(g_u$Species)
+unique(g_u$Playback)
+class(g_u$Playback)
+unique(g_u$Response)
+class(g_u$Response)
+
+g_u$Playback<- factor(g_u$Playback, levels = c( "Acla"       ,     "Aclodes"   ,  "Anaxipha", "A. spatulata" , "B. maculipennis", "V. zedersted"  ,  "C. wheeleri" ,  "D. gigliotosi"  , "Q. gigas" ,  "Z. smaragdina"   ,  
+        "E. diastema" , "H. fleishmanni", "D. ebraccatus" ,  "S. sila"     ,      "P. pustulosus" ,  "H. frenatus" , "T. rapicauda"  , 
+    "Beetle flight",  "frog hopping"  , "mouse rustles", "White_noise"), ordered = TRUE )
+```
+
+ "Acla"       ,     "Aclodes"   ,  "Anaxipha", "A. spatulata" , "B. maculipennis", "V. zedersted"  ,  "C. wheeleri" ,  "D. gigliotosi"  , "Q. gigas" ,  "Z. smaragdina"   ,  
+        "E. diastema" , "H. fleishmanni", "D. ebraccatus" ,  "S. sila"     ,      "P. pustulosus" ,  "H. frenatus" , "T. rapicauda"  , 
+    "Beetle flight",  "frog hopping"  , "mouse rustles", "White_noise"
+       
+           
+ 
+```{r}
+Resp_avg<-g_u %>% group_by(Species, Playback ) %>%
+      summarise(Resp_average = mean(Response, na.rm=TRUE))
+Resp_avg
+```
+
+```{r}
+g_u_p <- ggplot(data = g_u, aes(x = Playback, y = Response, colour = Species))
+
+g_u_p <- g_u_p + geom_point(position = position_jitter(width = 0.1), size = 5)
+g_u_p <- g_u_p + coord_cartesian(ylim = c(0, 5.25))
+g_u_p <- g_u_p + scale_colour_brewer(palette = PL)
+g_u_p <- g_u_p + TM
+g_u_p <- g_u_p +  xlab("Acoustic stimuli")
+g_u_p <- g_u_p +  ylab("Response score")
+g_u_p
+
+#ggsave("gleaner_universe_full.jpg", width = 17)
+
+```
+
+
+```{r}
+Resp_avg
+
+g_u_p_avg <- ggplot(data = Resp_avg, aes(x = Playback, y = Resp_average, colour = Species))
+g_u_p_avg  <- g_u_p_avg  + geom_point(size = 8)
+#g_u_p_avg  <- g_u_p_avg  + geom_point(position = position_jitter(width = 0.1))
+g_u_p <- g_u_p + coord_cartesian(ylim = c(0, 5.25))
+g_u_p_avg <- g_u_p_avg + TM
+g_u_p_avg <- g_u_p_avg + scale_colour_brewer(palette = PL)
+g_u_p_avg <- g_u_p_avg +  xlab("Acoustic stimuli")
+g_u_p_avg <- g_u_p_avg +  ylab("Mean response score")
+g_u_p_avg 
+
+ #ggsave("gleaner_universe_avg.jpg",  width = 17) 
+
+```
+No axes graph 1
+```{r}
+
+g_u_p_nax <- g_u_p + TM1
+
+ggsave("gleaner_universe_full_NAX.jpg", width = 17, height = 8)
+
+
+
+```
+
+No axes graph 2
+```{r}
+
+g_u_p_avg_NAX  <- g_u_p_avg + TM1
+g_u_p_avg_NAX
+
+ggsave("gleaner_universe_avg_NAX.jpg", width = 17, height = 8)
+
+#Saving 17 x 3.91 in image
+```
+
