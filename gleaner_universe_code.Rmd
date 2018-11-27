@@ -19,21 +19,19 @@ library(RColorBrewer)
 ```
 
 ```{r}
-g_u <- read_excel("~/Dropbox/gleaner_universe_compiled_r.xlsx", 
-+     col_types = c("text", "text", "text", 
-+         "text", "numeric", "numeric", "text", 
-+         "text", "date", "numeric", "text"))
+g_u <- g_u <- read_excel("~/Dropbox/gleaner universe backups/gleaner_universe_compiled_r_1.xlsx")
 ```
 
 Palettes
 ```{r}
 #theme: 
-TM <- theme_calc(base_size = 25) + theme(axis.text.x = element_text(angle = 45, hjust=1, size = 14))
+TM <- theme_calc(base_size = 25) + theme(axis.text.x = element_text(angle = 45, hjust=1)) #tilted x-axis labels and title
 
+TM2<-theme_calc(base_size = 25) + theme(axis.text.x = element_text(angle = 45, hjust=1), axis.title.x=element_blank()) #tilted x-axis labels, no x title
 
 TM1 <- theme(axis.title.x=element_blank(),
         axis.text.x=element_blank(),
-        axis.ticks.x=element_blank())
+        axis.ticks.x=element_blank()) #blank axes
 
 PL <-  "Spectral"
 
@@ -43,14 +41,15 @@ PL <-  "Spectral"
 
 ```{r}
 unique(g_u$Species)
+unique(g_u$Species_full)
 unique(g_u$Playback)
 class(g_u$Playback)
 unique(g_u$Response)
 class(g_u$Response)
 
-g_u$Playback<- factor(g_u$Playback, levels = c( "Acla"       ,     "Aclodes"   ,  "Anaxipha", "A. spatulata" , "B. maculipennis", "V. zedersted"  ,  "C. wheeleri" ,  "D. gigliotosi"  , "Q. gigas" ,  "Z. smaragdina"   ,  
-        "E. diastema" , "H. fleishmanni", "D. ebraccatus" ,  "S. sila"     ,      "P. pustulosus" ,  "H. frenatus" , "T. rapicauda"  , 
-    "Beetle flight",  "frog hopping"  , "mouse rustles", "White_noise"), ordered = TRUE )
+g_u$Playback<- factor(g_u$Playback, levels = c( "Acla sp."       ,     "Aclodes sp."   ,  "Anaxipha sp.", "A. spatulata" , "T. subfalcata", "V. zederstedi"  ,  "C. wheeleri" ,  "D. gigliotosi"  , "Q. gigas" ,  "Z. smaragdina"   ,  
+        "D. diastema" , "H. fleishmanni", "D. ebraccatus" ,  "S. sila"     ,      "P. pustulosus" ,  "H. frenatus" , "T. rapicauda"  , 
+    "Beetle flight",  "Frog hopping"  , "Mouse rustles", "White noise"), ordered = TRUE )
 ```
 
  "Acla"       ,     "Aclodes"   ,  "Anaxipha", "A. spatulata" , "B. maculipennis", "V. zedersted"  ,  "C. wheeleri" ,  "D. gigliotosi"  , "Q. gigas" ,  "Z. smaragdina"   ,  
@@ -71,12 +70,12 @@ g_u_p <- ggplot(data = g_u, aes(x = Playback, y = Response, colour = Species))
 g_u_p <- g_u_p + geom_point(position = position_jitter(width = 0.1), size = 5)
 g_u_p <- g_u_p + coord_cartesian(ylim = c(0, 5.25))
 g_u_p <- g_u_p + scale_colour_brewer(palette = PL)
-g_u_p <- g_u_p + TM
+g_u_p <- g_u_p + TM2
 g_u_p <- g_u_p +  xlab("Acoustic stimuli")
 g_u_p <- g_u_p +  ylab("Response score")
 g_u_p
 
-#ggsave("gleaner_universe_full.jpg", width = 17)
+ggsave("gleaner_universe_full2.jpg", width = 17, height = 8)
 
 ```
 
@@ -94,8 +93,11 @@ g_u_p_avg <- g_u_p_avg +  xlab("Acoustic stimuli")
 g_u_p_avg <- g_u_p_avg +  ylab("Mean response score")
 g_u_p_avg 
 
- #ggsave("gleaner_universe_avg.jpg",  width = 17) 
+ #
+ggsave("gleaner_universe_avg2.jpg",  height = 8 ,width = 17) 
 
+#save with tilty text, save with 8 x 17 defaults
+#save without x axis
 ```
 No axes graph 1
 ```{r}
