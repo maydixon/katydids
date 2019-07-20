@@ -1,9 +1,61 @@
 ---
-title: "Acoustic_universe_compiled"
+title: "GleanerU7.19.19"
 author: "may"
-date: "November 12, 2018"
+date: "July 19, 2019"
 output: html_document
 ---
+
+Questions: 
+
+Non-statistical: 
+Which and how many species approach potential prey sounds?
+  
+Which potential prey sounds does each species  approach?
+
+Does each species approach mating calls, incidental sounds, or both?
+
+How many categories of calls does each species approach?
+
+*****
+Does each bat species have a similar level of response to the different prey sounds?: 
+*****
+
+Cumulative link mixed model:
+Response variable: Bat interest score
+Fixed effects: bat species, sound type
+Random effects: bat ID (means I will have to have enough individuals per species)
+Bat interest score ~ bat species * sound type (random=batID), family = logit
+AICc to rank models (Committee suggests iterative model selection)
+Main effect of call type = prey species face different levels of bat predation
+Main effect of bat species = different bats have different levels of responsiveness to sounds
+Interaction between ‘bat species’ and ‘call type’ = different bats are attracted to different calls
+******
+Do some bat species approach more categories of sounds than others? 
+(generalists v specialists)
+******
+Kruskal–Wallis OR generalized linear mixed model (depending on data distribution)
+Y = # categories approached
+ x = bat species
+Random = bat ID
+#categories approached ~ bat species, random= bat ID, family=poisson
+
+****
+Which sound parameters are relevant to the preferences of each bat species? 
+Cumulative link mixed models:
+Response variable: Bat species interest score
+Fixed effects: # pulses*, peak frequency, duty cycle, bandwidth, and duration
+Random effects: bat ID
+AICc to rank models
+When highest-ranking models are nested: test for significant differences with likelihood ratio test
+When no significant differences between models, select most parsimonious model with only significant variables
+
+Which variables are included in the final model?
+
+*May be hard to compare incidental noises with calls 
+*********
+How do the categories of sounds cluster? 
+PCA
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -20,11 +72,19 @@ library(plotly)
 
 library(ordinal) 
 library(emmeans)
+library(multcompView)
 ```
 
 ```{r}
-gleaner_universe_temp_r_02_19_19 <- read_excel("~/Dropbox/gleaner universe backups/gleaner_universe_temp_r_02.19.19.xlsx")
-g_u <- gleaner_universe_temp_r_02_19_19
+gleaner_universe_r_7_19_19 <- read_excel("~/Dropbox/GLEANER UNIVERSE STUDY/data sheets/gleaner_universe_r_7.19.19.xlsx")
+g_u <- gleaner_universe_r_7_19_19
+
+Call_analysis_avgs_R <- read_excel("~/Dropbox/GLEANER UNIVERSE STUDY/data sheets/Call_analysis_avgs_R.xlsx", 
++     col_types = c("text", "numeric", "numeric", 
++         "numeric", "numeric", "numeric", 
++         "numeric", "numeric", "text", "text", 
++         "text", "text", "text", "text", "numeric", 
++         "text"))
 
 ```
 
@@ -86,19 +146,159 @@ class(g_u$Response)
 g_u <- subset(g_u, g_u$Playback!="Moth sounds") 
 g_u <- subset(g_u, g_u$Playback!="NA") 
 
-## Just for now remove Trinycteris
-g_u <- subset(g_u, g_u$Species!="Trin_nice") 
+## Just for now remove Micronycteris schmidtorum, glyphonycteris
+g_u <- subset(g_u, g_u$Species!="Micr_schm" & g_u$Species!="Glyp_davi") 
+
 
 g_u$Playback<- factor(g_u$Playback, levels = c( "Acla sp."       ,     "Aclodes sp."   ,  "Anaxipha sp.", "A. spatulata" , "T. subfalcata", "V. zederstedi"  ,  "C. wheeleri" ,  "D. gigliotosi"  , "Q. gigas" ,  "Z. smaragdina"   ,  
         "D. diastema" , "H. fleishmanni", "D. ebraccatus" ,  "S. sila"     ,      "P. pustulosus" ,  "H. frenatus" , "T. rapicauda"  , 
     "Beetle flight",  "Frog hopping"  , "Mouse rustles", "White noise"), ordered = TRUE )
 ```
 
- "Acla"       ,     "Aclodes"   ,  "Anaxipha", "A. spatulata" , "B. maculipennis", "V. zedersted"  ,  "C. wheeleri" ,  "D. gigliotosi"  , "Q. gigas" ,  "Z. smaragdina"   ,  
-        "E. diastema" , "H. fleishmanni", "D. ebraccatus" ,  "S. sila"     ,      "P. pustulosus" ,  "H. frenatus" , "T. rapicauda"  , 
-    "Beetle flight",  "frog hopping"  , "mouse rustles", "White_noise"
-       
-           
+
+Code categories
+```{r}
+#Recode a variable with the cetegories
+
+g_u<- g_u %>% mutate(Call_type = if_else(Playback %in% c("A. spatulata","C. wheeleri","D. gigliotosi" ,"T. subfalcata","V. zederstedi"), "Katydid", 
+      if_else(Playback %in% c( "Acla sp.","Aclodes sp.",  "Anaxipha sp."), "Cricket", 
+      if_else(Playback %in% c("D. diastema", "D. ebraccatus", "D. ebraccatus",  "H. fleishmanni", "P. pustulosus" ,"S. sila"), "Frog", 
+      if_else(Playback %in% c("Q. gigas", "Z. smaragdina"), "Cicada", 
+      if_else(Playback %in% c( "H. frenatus","T. rapicauda" ), "Gecko", 
+      if_else(Playback %in% c("Beetle flight", "Frog hopping" , "Mouse rustles", "Moth sounds" ),"Movement cue", 
+      if_else(Playback %in% c("White noise"), "White noise","Other"
+      
+      ))))))))
+
+g_u$Call_type
+
+#order factor
+g_u$Playback<- factor(g_u$Playback, levels = c( "Cricket" , "Katydid", "Frog"  ,"Gecko",   "Cicada" ,  "Movement cue",    "White noise" ), ordered = TRUE )
+
+```
+
+
+Recode response with 0, 4, 5,
+```{r}
+#Recode a variable with 0, 4, 5 
+
+g_u<- g_u %>% mutate(Response_ApproachLand = if_else(Response %in% c("0","1","2" ,"3"), "0", if_else(Playback %in% c("4"), "4", if_else(Response %in%c("5"),"5", "other"))))
+
+g_u<- g_u %>% mutate(Response_ApproachLand = case_when(
+      Response == 0 ~ 0, 
+      Response == 1 ~ 0,
+      Response == 2 ~ 0,
+      Response == 3 ~ 0,
+      Response == 4 ~ 4, 
+      Response == 5 ~ 5))
+
+      if_else(Playback %in% c("D. diastema", "D. ebraccatus", "D. ebraccatus",  "H. fleishmanni", "P. pustulosus" ,"S. sila"), "Frog", 
+      if_else(Playback %in% c("Q. gigas", "Z. smaragdina"), "Cicada", 
+      if_else(Playback %in% c( "H. frenatus","T. rapicauda" ), "Gecko", 
+      if_else(Playback %in% c("Beetle flight", "Frog hopping" , "Mouse rustles", "Moth sounds" ),"Movement cue", 
+      if_else(Playback %in% c("White noise"), "White noise","Other"
+      
+      ))))))))
+
+g_u$Call_type
+
+#order factor
+g_u$Playback<- factor(g_u$Playback, levels = c( "Cricket" , "Katydid", "Frog"  ,"Gecko",   "Cicada" ,  "Movement cue",    "White noise" ), ordered = TRUE )
+
+```
+
+##Which and how many species approach potential prey sounds?##
+
+```{r}
+#Pulling out Species that land
+land_sp <- g_u %>% filter(Response == 5)
+unique(land_sp$Species)
+
+nrow(land_sp)
+ 
+## "Loph_bras" "Loph_silv" "Trac_cirr" "Micr_micr" "Micr_hirs"
+
+# THERE ARE 5 species HUNTING using sounds, for sure
+
+#Species that land or approach
+approach_land_sp <- g_u %>% filter(Response == 5 | Response == 4) 
+unique(approach_land_sp$Species)
+
+# THERE ARE 10 species that maaybe use sounds to hunt, at least sometimes
+#[1] "Loph_bras" "Loph_silv" "Gard_cren" "Trac_cirr" "Micr_hirs" "Micr_micr" "Phyl_hast"
+
+nrow(approach_land_sp)
+View(approach_land_sp)
+unique(approach_land_sp$Playback)
+
+    ```
+ 
+ plot 
+ 
+```{r}
+PLOTS LAND OR APPROACH ONLY 
+
+n_colors_LA<- length(unique(land_sp$Species_full))
+
+p_gu_LA <- ggplot(data = land_sp, aes(x = Playback, y = Response, colour = Species_full))
+
+p_gu_LA <- p_gu_LA + geom_point(position = position_jitter(width = 0.5), size = 5)
+p_gu_LA <- p_gu_LA + coord_cartesian(ylim = c(0, 5.25))
+#p_gu_LA <- p_gu_LA + scale_colour_manual(values = PL(n_colors))
+p_gu_LA <- p_gu_LA + TM2
+p_gu_LA <- p_gu_LA +  xlab("Acoustic stimuli")
+p_gu_LA <- p_gu_LA +  ylab("Response score") 
+
+p_gu_LA
+
+
+#ggsave("p_lands_species.jpg", width = 19, height = 8)
+#ggsave("p_lands_approaches_species.jpg", width = 19, height = 8)
+
+```
+ 
+```
+     
+ ## Do bats respond more to some categories compared to others? 
+```{r}
+# bat response ~ category ( number )
+unique(g_u$Call_type)
+
+clmm_call_type<- clmm(as.factor(Response) ~ Call_type + (1| Number), data= g_u)
+summary(clmm_call_type)
+
+em_call_type <-emmeans(clmm_call_type, "Call_type")
+em_call_type
+cld_call_type<- cld(em_call_type, letters=LETTERS)
+cld_call_type
+pwpp(em_call_type) 
+
+plot(em_call_type)
+class(em_call_type)
+
+
+```
+ 
+ ## Do bats approach or land on some categories more than others?
+ 
+```{r}
+# bat response ~ category ( number )
+
+clm_AppLand_call_type<- clm(as.factor(Response_ApproachLand) ~ Call_type, data= g_u)
+
+summary(clm_AppLand_call_type)
+
+em_AppLand_call_type <-emmeans(clm_AppLand_call_type, "Call_type")
+em_AppLand_call_type
+cld_AppLand_call_type<- cld(em_AppLand_call_type, letters=LETTERS)
+cld_AppLand_call_type
+pwpp(em_AppLand_call_type) 
+
+plot(em_AppLand_call_type)
+class(em_AppLand_call_type)
+
+```
+     
  Response bat species average responses to different groups:((cant really do averages on ordinal scales, but works for visualization))
 ```{r}
 Resp_avg<-g_u %>% group_by(Species_full, Playback ) %>%
@@ -214,6 +414,11 @@ g_u_p_avg_f
 #save with tilty text, save with 8 x 17 defaults
 #save without x axis
 ```
+
+
+
+
+
 ###########################
 ###########################
 ##SUBSETS##
@@ -832,7 +1037,7 @@ DO different bats have different preferences?
 #clmm
 class(g_u$Response)
 #
-G_U_clmm_pl<- clmm(as.factor(Response) ~ Species + (1| Number), data= g_u)
+G_U_clmm_pl<- clmm(as.factor(Response) ~ Species + (1| Number) + (1| ID), data= g_u)
 summary(G_U_clmm_pl)
 
 sp_em <-emmeans(G_U_clmm_pl, "Species")
