@@ -53,7 +53,7 @@ DATA ORGANIZING THINGS
 colnames(CA)
 ## remove NAs
 CA <- subset(CA, CA$peak_freq != "NA") 
-
+unique(CA$Playback)
 #order playback
 CA$Playback<- factor(CA$Playback, levels = c( "Acla sp." ,     "Aclodes sp."   ,  "Anaxipha sp.", "A. spatulata" , "T. subfalcata", "V. zederstedi"  ,  "C. wheeleri" ,  "D. gigliotosi"  , "Q. gigas" ,  "Z. smaragdina"   ,   "D. diastema" , "H. fleishmanni", "D. ebraccatus" ,  "S. sila"   ,   "P. pustulosus" ,  "H. frenatus" , "T. rapicauda"  , 
     "Beetle flight",  "Frog hopping"  , "Mouse rustles", "White noise"), ordered = TRUE )
@@ -62,20 +62,24 @@ CA$Playback<- factor(CA$Playback, levels = c( "Acla sp." ,     "Aclodes sp."   ,
 
 PLOTTING 
 ```{r}
+CA_peakfreq<- subset(CA, CA$Playback != "White noise") 
 
+CA_peakfreq$Playback<- factor(CA_peakfreq$Playback, levels = c( "Acla sp." ,     "Aclodes sp."   ,  "Anaxipha sp.", "A. spatulata" , "T. subfalcata", "V. zederstedi"  ,  "C. wheeleri" ,  "D. gigliotosi"  , "Q. gigas" ,  "Z. smaragdina"   ,   "D. diastema" , "H. fleishmanni", "D. ebraccatus" ,  "S. sila"   ,   "P. pustulosus" ,  "H. frenatus" , "T. rapicauda"  , 
+    "Beetle flight",  "Frog hopping"  , "Mouse rustles"))
 
-p_gu_pf <- ggplot(data = CA, aes(x = Playback, y = peak_freq, colour = Call_type))
+p_gu_pf <- ggplot(data = CA_peakfreq, aes(x = Playback, y = peak_freq, colour = Call_type))
 #p_gu_pf <- p_gu_pf+ xlim(0,)
 
 p_gu_pf <- p_gu_pf+ geom_point(size = 5)
 p_gu_pf <- p_gu_pf+  xlab("Acoustic stimuli")
 p_gu_pf <- p_gu_pf+  ylab("Peak Frequency") 
-p_gu_pf <- p_gu_pf+ theme(legend.title = element_blank())
+#p_gu_pf <- p_gu_pf+ theme(legend.title = element_blank())
 p_gu_pf <- p_gu_pf+ TM
 p_gu_pf 
-ggsave("peak_freq_acoustic_stim.jpg", width = 15)
+ggsave("peak_freq_acoustic_stim.jpg", width = 14)
 
 
 
 ```
+
 

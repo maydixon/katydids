@@ -63,13 +63,14 @@ knitr::opts_chunk$set(echo = TRUE)
 
 libraries
 ```{r}
+library(GmAMisc) 
 library(readxl)
 library(ggplot2)
 library(dplyr)
 library(ggthemes)
 library(RColorBrewer)
 library(plotly)
-
+library(car)
 library(ordinal) 
 library(emmeans)
 library(multcompView)
@@ -91,7 +92,7 @@ Call_analysis_avgs_R <- read_excel("~/Dropbox/GLEANER UNIVERSE STUDY/data sheets
 Palettes
 ```{r}
 #theme: 
-TM <- theme_calc(base_size = 25) + theme(axis.text.x = element_text(angle = 45, hjust=1), plot.background =element_blank()) #tilted x-axis labels and title
+TM <- theme_calc(base_size = 25) + theme(axis.text.x = element_text(angle = 45, hjust=1), plot.background =element_blank(), legend.title = element_blank()) #tilted x-axis labels and title, no legend title
 
 TM2<-theme_calc(base_size = 25) + theme(axis.text.x = element_text(angle = 45, hjust=1), axis.title.x=element_blank()) #tilted x-axis labels, no x title
 
@@ -170,10 +171,10 @@ g_u<- g_u %>% mutate(Call_type = if_else(Playback %in% c("A. spatulata","C. whee
       
       ))))))))
 
-g_u$Call_type
+
 
 #order factor
-g_u$Playback<- factor(g_u$Playback, levels = c( "Cricket" , "Katydid", "Frog"  ,"Gecko",   "Cicada" ,  "Movement cue",    "White noise" ), ordered = TRUE )
+g_u$Call_type<- factor(g_u$Call_type, levels = c( "Cricket" , "Katydid", "Frog"  ,"Gecko",   "Cicada" ,  "Movement cue",    "White noise" ), ordered = TRUE )
 
 ```
 
@@ -192,44 +193,68 @@ g_u<- g_u %>% mutate(Response_ApproachLand = case_when(
       Response == 4 ~ 4, 
       Response == 5 ~ 5))
 
-      if_else(Playback %in% c("D. diastema", "D. ebraccatus", "D. ebraccatus",  "H. fleishmanni", "P. pustulosus" ,"S. sila"), "Frog", 
-      if_else(Playback %in% c("Q. gigas", "Z. smaragdina"), "Cicada", 
-      if_else(Playback %in% c( "H. frenatus","T. rapicauda" ), "Gecko", 
-      if_else(Playback %in% c("Beetle flight", "Frog hopping" , "Mouse rustles", "Moth sounds" ),"Movement cue", 
-      if_else(Playback %in% c("White noise"), "White noise","Other"
-      
-      ))))))))
+    
 
-g_u$Call_type
+```
 
-#order factor
-g_u$Playback<- factor(g_u$Playback, levels = c( "Cricket" , "Katydid", "Frog"  ,"Gecko",   "Cicada" ,  "Movement cue",    "White noise" ), ordered = TRUE )
+```{r}
+#####
+# adding in amplitude
+#####
+g_u<- g_u %>% mutate(amplitude = case_when(
+      Call_type == "Katydid" ~ 86.8, 
+      Call_type == "Frog" ~ 75,
+      Call_type == "Gecko" ~ 76.07,
+      Call_type == "Cricket" ~ 70.22,
+      Call_type == "Cicada" ~ 83.07,
+      Playback == "Beetle flight" ~ 41.52,
+      Playback == "Frog hopping"~ 39.52,
+      Playback == "Mouse rustles" ~ 37.66))
 
 ```
 
 ##Which and how many species approach potential prey sounds?##
-
+##Which land?##
 ```{r}
 #Pulling out Species that land
 land_sp <- g_u %>% filter(Response == 5)
 unique(land_sp$Species)
+unique(land_sp$Playback)
 
 nrow(land_sp)
+l_sp<- cbind(land_sp$Species_full, land_sp$Playback)
+View(l_sp)
+ #A. spatulata  Beetle flight C. wheeleri   D. gigliotosi P. pustulosus
+#Q. gigas      S. sila       T. subfalcata V. zederstedi
  
 ## "Loph_bras" "Loph_silv" "Trac_cirr" "Micr_micr" "Micr_hirs"
 
-# THERE ARE 5 species HUNTING using sounds, for sure
+# THERE ARE 5 species HUNTING using sounds, for sure, hunting 7 things
+```
 
+## Which land or approach? 
+```{r}
 #Species that land or approach
 approach_land_sp <- g_u %>% filter(Response == 5 | Response == 4) 
+nrow(approach_land_sp )
 unique(approach_land_sp$Species)
-
+unique(approach_land_sp$Playback)
+length(approach_land_sp$Playback == "A. spatulata")
 # THERE ARE 10 species that maaybe use sounds to hunt, at least sometimes
 #[1] "Loph_bras" "Loph_silv" "Gard_cren" "Trac_cirr" "Micr_hirs" "Micr_micr" "Phyl_hast"
 
 nrow(approach_land_sp)
 View(approach_land_sp)
 unique(approach_land_sp$Playback)
+
+# IS the frequency of approach to different treatments different than random? 
+
+table_app_land<- table(approach_land_sp$Playback)
+table_app_land
+
+chisq.test(table_app_land)
+#IDK if this is appropriate, but its not different at alpha .05. p = 0.09
+
 
     ```
  
@@ -1024,6 +1049,158 @@ katydid_p_2_a
 ##########################
 ##########################
 
+```{r}
+
+
+rankModels = function(mod,names=NULL,phi=NULL,pretend=NULL) {
+  
+  # Overdispersion
+  # calculate Pearson Chi squared
+  if (is.null(phi)==FALSE) {
+    if (is.numeric(phi)){phi=phi}
+    else {
+      X2 <- sum(residuals(phi, type = "pearson")^2)
+      
+      
+      # divide by the residual degrees of freedom
+      phi <- X2/phi$df.residual
+    }}
+  # can also calculate with residual deviance
+  print(phi)
+  if(is.null(pretend)){pretend=TRUE}
+  if (is.null(names)==FALSE){names = names[2:length(names)]}  
+  if (is.null(names)==TRUE){names = paste("m",1:length(mod),sep="")}  
+  Model   = 1:length(mod)
+  LogLik     = vector(length = length(mod))
+  ll      = vector(length = length(mod))
+  n       = vector(length = length(mod))
+  p       = vector(length = length(mod))
+  AICc    = vector(length = length(mod))
+  AIC     = vector(length = length(mod))
+  RootMSE = vector(length = length(mod))
+  
+  
+  
+  # Make sure all models in list are either glm or lme4 objects. You can't compare mixed and fixed effects models.  
+  allright=FALSE
+  cl = character(length=length(mod))
+  for (ii in 1:length(mod)){
+    cl[ii] = class(mod[[ii]])[1] # identify the class of each model object in the list 
+  }
+  if (all(cl=="nlme") | all(cl=="nls") | all(cl=="gam") | all(cl=="betareg")| all(cl=="mer"|cl=="glm") | all(cl=="clmm" | cl=='sclm')) {allright=TRUE}
+
+  
+  if (allright==TRUE){
+    # loop over the models in the list to extract relevant info.
+    for (m in 1:length(mod)) {
+      LogLik[m]      = logLik(mod[[m]])
+      ll[m]      = as.numeric(LogLik[m])
+      p[m]      = attr(logLik(mod[[m]]),"df")
+      
+      if (cl[m]=="mer"){
+        r         = mod[[m]]@y - fitted(mod[[m]])} # get y from lme4 object
+      
+      if (cl[m]=="clmm"|cl[m]=="sclm"){
+        # can't calculate residual variance for clmm models, so set to 0
+        r         = rep(0,dim(mod[[m]]$model[1])[1])} 
+      
+      if  (cl[m] %in% c("glm","gam","betareg")) {
+        r       = mod[[m]]$y - fitted(mod[[m]])}
+      
+      if (cl[m]=="nlme") {
+        r       = mod[[m]]$residuals[,1]}  # get r from nlme object
+      
+      if (cl[m]=="nls") {
+        r       = as.numeric(resid(mod[[m]]))}  # get r from nls object
+      
+      
+      # calculate RMSE for all but clmm models
+      RootMSE[m]= sqrt(sum(r^2))
+      if (cl[m]=="clmm"|cl[m]=="sclm"){RootMSE[m]=NA}
+      n[m] = length(r)
+      if (is.null(phi)){
+        AICc[m]   = as.numeric(-2 * ll[m] + 2*p[m] + 2*p[m]*(p[m] + 1)/(n[m] - p[m] - 1))
+        AIC[m]    = as.numeric(-2 * ll[m] + 2*p[m])
+      }
+      else{
+        if (is.null(phi)==FALSE){
+          AICc[m]   = as.numeric(-2 * ll[m]/phi + 2*p[m] + 2*p[m]*(p[m] + 1)/(n[m] - p[m] - 1))
+          AIC[m]    = as.numeric(-2 * ll[m]/phi + 2*p[m])
+        }
+      }
+    }
+    
+    ###############################################################################
+    # try to identify pretending models
+    # calcualte all pairwise delta AIC values so we can identify pairs of models with delta AIC approximately     twice the difference in their number of parameters.
+    
+    daic = matrix(0,length(Model),length(Model))
+    dll  = matrix(0,length(Model),length(Model))
+    llDir  = matrix(0,length(Model),length(Model))
+    dp   = matrix(0,length(Model),length(Model))
+    for (ii in 1:length(Model)){
+      for (iii in 1:length(Model)){
+        dll[ii,iii] = ll[ii]-ll[iii]
+        llDir[ii,iii] = ll[ii]>ll[iii]
+        daic[ii,iii] = AIC[ii]-AIC[iii]
+        dp[ii,iii]   = p[ii]-p[iii]
+      }
+    }
+    
+    # identify model pairs with close log likelihood values
+    sameLL = dll>0 & dll<=0.5
+    
+    # identify model pairs whose difference in the number of parameters is roughly divisible by 2, which is the per-parameter penalty used in calculating AIC.  
+    paramDif = (1 - daic/(dp*2))<0.2 & (1 - daic/(dp*2))>0
+    
+    # identify model pairs that meet both conditions. The column index should be the 'real' model, and the row index is the column;
+    impostors = which(sameLL & paramDif,arr.ind=TRUE)
+    
+    
+    delAIC = AICc-min(AICc)                      # Delta AICc
+    W = exp(-0.5*delAIC)/sum(exp(-0.5*delAIC))   # Akaike Weight
+    Wp = rep(0,length(Model))
+    Wp[-impostors[,1]] = exp(-0.5*delAIC[-impostors[,1]])/sum(exp(-0.5*delAIC[-impostors[,1]]))   # Akaike Weight
+    
+    Pretending = character(length(Model))
+    for (ii in 1:length(Model)){
+      if(any(impostors[,2]==ii)){
+        if(is.null(names)){getImpostors = as.character((c(impostors[impostors[,2]==ii,1])))}
+        if(is.null(names)==FALSE){getImpostors = names[(c(impostors[impostors[,2]==ii,1]))]}
+        Pretending[ii] = paste(getImpostors,collapse=", ") }}
+    
+    idx = sort(delAIC,index.return=TRUE)         # create index to sort by deltaAICc
+    
+    # Sort variables by index to output to table
+    if (is.null(names)==TRUE){Model = Model[idx$ix]}  # model id number
+    if (is.null(names)==FALSE){Model = names[idx$ix]} # model name if available
+    LogLik      = formatC(LogLik[idx$ix],2,format="f")   # log likelihood
+    p        = p[idx$ix]                           # number of parameters
+    AICc     = formatC(AICc[idx$ix],2,format="f")  # AICc or QAICc
+    RootMSE  = RootMSE[idx$ix]                     # RMSE - a measure of variance explained
+    delAICc  = formatC(delAIC[idx$ix],2,format="f")# delta AICc or QAICc
+    W        = formatC(W[idx$ix],3,format="f")     # Akaike weights
+    Wp       = formatC(Wp[idx$ix],3,format="f")     # Akaike weights without pretending models
+    Pretending= Pretending[idx$ix]
+    
+    # make table withouth phi
+    if (is.null(phi)){
+      if(pretend){modelTable = data.frame(Model,LogLik,n,p,AICc,delAICc,W,RootMSE,Wp,Pretending)}
+      else{if (pretend==FALSE){modelTable = data.frame(Model,LogLik,n,p,AICc,delAICc,W,RootMSE)}}}
+    
+    # make table with phi (if dispersion parameter is supplied)
+    if (is.null(phi)==FALSE){
+      QAICc = AICc
+      delQAICc = delAICc;
+      if (pretend){modelTable = data.frame(Model,LogLik,n,p,QAICc,delQAICc,W,RootMSE,Wp,Pretending)}
+      else{if (pretend==FALSE){modelTable = data.frame(Model,LogLik,n,p,QAICc,delQAICc,W,RootMSE)}}
+    }
+    modelTable # return table
+  } else {
+    warning("All models must be either glm or lme4 objects.",call=TRUE)
+  }
+}
+```
 
 
 
@@ -1031,12 +1208,14 @@ Stats?
 
 DO different bats have different preferences?
 ```{r}
-#DO different bats have different responses to sounds?
+################ Can put this stat on chart: Different species respond to sounds differently
+#no AJS
+g_u_2<- subset(g_u, g_u$species != Arti_jama)
 
-#Response score ~ batID*Playback
+#DO different bats have different responses to sounds?
+#Response score ~Playback
 #clmm
-class(g_u$Response)
-#
+
 G_U_clmm_pl<- clmm(as.factor(Response) ~ Species + (1| Number) + (1| ID), data= g_u)
 summary(G_U_clmm_pl)
 
@@ -1045,19 +1224,78 @@ sp_em
 sp_em_cld<- cld(sp_em, letters=LETTERS)
 sp_em_cld
 plot(sp_em)
+
 #ggsave("emmeans_all_pl.jpg")
-G_U_clmm_pl<- clmm(as.factor(Response) ~ Playback + (1| Number), data= g_u)
-summary(G_U_clmm_pl)
 
-G_U_clmm_pl.pl<- clmm(as.factor(Response) ~ Species:Playback + (1| Number), data= g_u)
-summary(G_U_clmm_pl.pl)
+```
 
+
+RUNNING TESTS TO SEE WHETHER DIFFERENT BATS RESPOND TO SOUNDS DIFFERENTLY
+```{r}
+#Does playback predict response? Yes
+G_U_clmm_pl<- clmm(as.factor(Response) ~ Playback + (1| ID), data= g_u)
+summary(G_U_clmm_pl) 
+
+# Does category predict response? YES
+G_U_clmm_CT<- clmm(as.factor(Response) ~ Call_type + (1| ID), data= g_u)
+summary(G_U_clmm_CT) 
+em_CT <-emmeans(G_U_clmm_CT, "Call_type")
+em_CT
+plot(em_CT)
+# ggsave("over_bat_response_call_type.jpg")
 G_U_clmm<- clmm(as.factor(Response) ~ Species*Playback + (1| Number), data= g_u)
 summary(G_U_clmm)
 
-#without AJS
+
+g1_01<- clmm(as.factor(Response) ~ Species * Playback + (1|ID), data= g_u, Hess=TRUE, nAGQ=10) #full model
+g1_02<- clmm(as.factor(Response) ~ Species + Playback + (1|ID), data= g_u, Hess=TRUE, nAGQ=10)
+g1_03<- clmm(as.factor(Response) ~ Species + (1|ID), data= g_u, Hess=TRUE, nAGQ=10)
+g1_04<- clmm(as.factor(Response) ~ Playback + (1|ID), data= g_u, Hess=TRUE, nAGQ=10)
+g1_05<- clmm(as.factor(Response) ~ 1 + (1|ID), data= g_u, Hess=TRUE, nAGQ=10)
+
+rankModels(list(g1_01, g1_02, g1_03, g1_04, g1_05))
+rankedmodels_g1<-rankModels(list(g1_01, g1_02, g1_03, g1_04, g1_05))
+rankedmodels_g1
+## So this analysis thinks that species predicts responses, and playback predicts responses, but different species don't respond differently to different playbacks (including all the species with more than 1 response. But the first model was just really hard to fit. May be that mostly bats responded to the sounds just as hthings to listen to, and since most of the bats didn't respond to sounds, then that was the dominant effect)
+
+#1 pull out species with at least 1 land, and test them, to pull out species that we know are paying attention for food purposes. 
+
+#could also do an analysis with the bats that are most likely to just be listening: AJS, discolor. try to parse what just listening looks like vs what hunting looks like. 
+
+# also pull out a species and look at preferences
+
+```
+
+TEST ACOUSTIC PREFERENCES: MULTICOLLINEARITY
+```{r}
+# Make models to test for Multicollinearity, choose variables that don't super covary
+g_u$pulses_call <- as.numeric(g_u$pulses_call)
+g_u$duty_cycle<- as.numeric(g_u$duty_cycle)
+g_u$sum_pulse_duration_callgroup <- as.numeric(g_u$sum_pulse_duration_callgroup)
+
+## pretty nuch every acoustic variable must be logged
+hist(g_u$amplitude)
+hist(log(g_u$amplitude))
+
+#  removed variables+ log(pulses_call)
+model <- glm(Response ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)   + log(duty_cycle) + log(file_time_with_sound) + amplitude , data= g_u)
+summary(model)
+alias(model)
+vif(model) 
+
+# with call types logged, these are not multicollinear > 5
+
+```
 
 
+
+
+
+```{r}
+as.numeric(g_u$duty_cycle)
+colnames(g_u)
+G_U_acoustic<- clmm(as.factor(Response) ~ sum_pulse_duration_callgroup + peak_freq + bandw + pulses_call  + duty_cycle + file_time_with_sound + amplitude + (1| Number), data= g_u)
+summary(G_U_acoustic)
 
 ```
 
@@ -1103,6 +1341,14 @@ plot(K_pl_cld) #overall responses to katydids
 #ggsave("emmeans_K_pl.jpg")
 
 ```
+
+
+
+
+
+#####SOUND#######
+
+
 
 
 
