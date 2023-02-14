@@ -1,0 +1,2446 @@
+---
+title: "Gleaner Universe"
+output: html_notebook
+editor_options: 
+  markdown: 
+    wrap: 72
+    toc: TRUE
+---
+
+
+### Explore data:  
+How many bats do I have for each species?  
+How many bats did I have in total?  
+How many exemplars did I have for each playback?  
+When were they used? (haven't done yet, should add)  
+
+------------------------------------------------------------------------
+
+### Questions:
+
+#### Non-statistical:   
+
+**Which and how many bat species approach or attack potential prey sounds?**   
+      -(which are possible eavesdropping gleaners)  
+      - 'Attacks' are our clearest data- if a bat landed on the speaker playing the sound, we have high confidence they are gleaners  
+      - 'Approaches' are suggestive, but could also happen for other reasons (just passing close to speaker).             - So these cases are of high interest but with caution  
+
+***Which* potential prey sounds does each bat species approach?**  
+(what do they eat, if they do?)  
+
+**Does each bat species approach mating calls, incidental sounds, or both?**  
+(what kind of sounds do they use)  
+
+**How many categories of calls does each species approach?**  
+(are they specialists? generalists?)  
+
+
+#### Statistical:   
+
+**Which sounds are more attractive to more bats?**  
+      Does each bat species have a similar level of response to the different prey sounds?:   
+      1. are bat species similar to one another in their preferences? 
+      2. are some prey consistently more attractive, or do different bat species differ?
+
+      **Approach:**  
+      Cumulative link mixed model:
+      Response variable: Bat interest score  
+      Fixed effects: bat species, sound type  
+      Random effects: bat ID (means I will have to have enough individuals per species)  
+      Bat interest score \~ bat species \* sound type (random=batID), family = logit AICc to rank models (Committee suggested iterative model selection)   
+      Main effect of call type = prey categories face different levels of bat predation  
+      Main effect of bat species = different bats have different levels of responsiveness to sounds  
+      *Interaction between 'bat species' and 'call type' = different bats are attracted to different calls*  
+      *Do some bat species approach more categories of sounds than others? (generalists v specialists)*   
+        
+      Kruskal--Wallis OR generalized linear mixed model (depending on data distribution)  
+      Y = \# categories approached  
+      x = bat species  
+      Random = bat ID  
+      #categories approached \~ bat species, random= bat ID, family=poisson  
+
+---
+
+**Which sound parameters are relevant to the preferences of each bat species?**  
+(what does each bat pay attention to?)  
+Cumulative link mixed models:  
+      Response variable: Bat species interest score  
+      Fixed effects: \#pulses\*, peak frequency, duty cycle, bandwidth, and duration  
+      Random effects: bat ID AICc to rank models (ACTUALLY- iterative model selection/ e.g. maximum liklihood (module 17))  
+      When highest-ranking models are nested: test for significant differences with likelihood ratio test  
+      When no significant differences between models, select most parsimonious model with only significant variables  
+      Which variables are included in the final model?
+
+*May be hard to compare incidental noises with calls*  
+
+**How do the categories of sounds cluster in acoustic space?**
+PCA
+
+**How do bat species preferences cluster?**  
+
+
+**OVERALL, what matters for bat response?**  
+(giant model with all variables?) response \~ bat species, prey species, prey category, amplitude, (other call characteristics), bat traits?? (mean size, wing area, etc)  
+
+would be good to seperate out bats that, more like AJs, are just listening to sounds in their environment, vs bats taht might be using the sounds to hunt
+
+### TO DO
+
+Acoustic data:  
+The acoustic data in the file are currently just the average value for each playback type, rather than the value for the exact call used in a trial. I need to delete these values, and match the values used in another file (call analysis) to each set and playback  
+ 
+ Also, plot call duration and other acoustic values to find out how well automatic classification did 
+
+Analysis/ visualization
+Think about comparing all bats to the responses of AJs, to compare what it looks like when a bat is just listening to sounds as things in their environment, vs using them to hunt
+
+------------------------------------------------------------------------
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Load libraries
+```{r libraries}
+#library(GmAMisc) 
+library(tidyverse)
+library(readxl)
+library(ggplot2)
+#library(dplyr)
+library(ggthemes)
+library(RColorBrewer)
+library(plotly)
+library(car)
+library(ordinal) 
+library(emmeans)
+library(multcompView)
+library(broom.mixed) 
+library(forcats)
+library(plotly)
+```
+
+
+### Function for ranking models (Code originally modified from supplemental R code in Bolker et al. (2009).
+```{r}
+# Code originally modified from supplemental R code in Bolker et al. (2009)
+
+rankModels = function(mod,names=NULL,phi=NULL,pretend=NULL) {
+  
+  # Overdispersion
+  # calculate Pearson Chi squared
+  if (is.null(phi)==FALSE) {
+    if (is.numeric(phi)){phi=phi}
+    else {
+      X2 <- sum(residuals(phi, type = "pearson")^2)
+      
+      
+      # divide by the residual degrees of freedom
+      phi <- X2/phi$df.residual
+    }}
+  # can also calculate with residual deviance
+  print(phi)
+  if(is.null(pretend)){pretend=TRUE}
+  if (is.null(names)==FALSE){names = names[2:length(names)]}  
+  if (is.null(names)==TRUE){names = paste("m",1:length(mod),sep="")}  
+  Model   = 1:length(mod)
+  LogLik     = vector(length = length(mod))
+  ll      = vector(length = length(mod))
+  n       = vector(length = length(mod))
+  p       = vector(length = length(mod))
+  AICc    = vector(length = length(mod))
+  AIC     = vector(length = length(mod))
+  RootMSE = vector(length = length(mod))
+  
+  
+  
+  # Make sure all models in list are either glm or lme4 objects. You can't compare mixed and fixed effects models.  
+  allright=FALSE
+  cl = character(length=length(mod))
+  for (ii in 1:length(mod)){
+    cl[ii] = class(mod[[ii]])[1] # identify the class of each model object in the list 
+  }
+  if (all(cl=="nlme") | all(cl=="nls") | all(cl=="gam") | all(cl=="betareg")| all(cl=="mer"|cl=="glm") | all(cl=="clmm" | cl=='sclm')) {allright=TRUE}
+
+  
+  if (allright==TRUE){
+    # loop over the models in the list to extract relevant info.
+    for (m in 1:length(mod)) {
+      LogLik[m]      = logLik(mod[[m]])
+      ll[m]      = as.numeric(LogLik[m])
+      p[m]      = attr(logLik(mod[[m]]),"df")
+      
+      if (cl[m]=="mer"){
+        r         = mod[[m]]@y - fitted(mod[[m]])} # get y from lme4 object
+      
+      if (cl[m]=="clmm"|cl[m]=="sclm"){
+        # can't calculate residual variance for clmm models, so set to 0
+        r         = rep(0,dim(mod[[m]]$model[1])[1])} 
+      
+      if  (cl[m] %in% c("glm","gam","betareg")) {
+        r       = mod[[m]]$y - fitted(mod[[m]])}
+      
+      if (cl[m]=="nlme") {
+        r       = mod[[m]]$residuals[,1]}  # get r from nlme object
+      
+      if (cl[m]=="nls") {
+        r       = as.numeric(resid(mod[[m]]))}  # get r from nls object
+      
+      
+      # calculate RMSE for all but clmm models
+      RootMSE[m]= sqrt(sum(r^2))
+      if (cl[m]=="clmm"|cl[m]=="sclm"){RootMSE[m]=NA}
+      n[m] = length(r)
+      if (is.null(phi)){
+        AICc[m]   = as.numeric(-2 * ll[m] + 2*p[m] + 2*p[m]*(p[m] + 1)/(n[m] - p[m] - 1))
+        AIC[m]    = as.numeric(-2 * ll[m] + 2*p[m])
+      }
+      else{
+        if (is.null(phi)==FALSE){
+          AICc[m]   = as.numeric(-2 * ll[m]/phi + 2*p[m] + 2*p[m]*(p[m] + 1)/(n[m] - p[m] - 1))
+          AIC[m]    = as.numeric(-2 * ll[m]/phi + 2*p[m])
+        }
+      }
+    }
+    
+    ###############################################################################
+    # try to identify pretending models
+    # calcualte all pairwise delta AIC values so we can identify pairs of models with delta AIC approximately     twice the difference in their number of parameters.
+    
+    daic = matrix(0,length(Model),length(Model))
+    dll  = matrix(0,length(Model),length(Model))
+    llDir  = matrix(0,length(Model),length(Model))
+    dp   = matrix(0,length(Model),length(Model))
+    for (ii in 1:length(Model)){
+      for (iii in 1:length(Model)){
+        dll[ii,iii] = ll[ii]-ll[iii]
+        llDir[ii,iii] = ll[ii]>ll[iii]
+        daic[ii,iii] = AIC[ii]-AIC[iii]
+        dp[ii,iii]   = p[ii]-p[iii]
+      }
+    }
+    
+    # identify model pairs with close log likelihood values
+    sameLL = dll>0 & dll<=0.5
+    
+    # identify model pairs whose difference in the number of parameters is roughly divisible by 2, which is the per-parameter penalty used in calculating AIC.  
+    paramDif = (1 - daic/(dp*2))<0.2 & (1 - daic/(dp*2))>0
+    
+    # identify model pairs that meet both conditions. The column index should be the 'real' model, and the row index is the column;
+    impostors = which(sameLL & paramDif,arr.ind=TRUE)
+    
+    
+    delAIC = AICc-min(AICc)                      # Delta AICc
+    W = exp(-0.5*delAIC)/sum(exp(-0.5*delAIC))   # Akaike Weight
+    Wp = rep(0,length(Model))
+    Wp[-impostors[,1]] = exp(-0.5*delAIC[-impostors[,1]])/sum(exp(-0.5*delAIC[-impostors[,1]]))   # Akaike Weight
+    
+    Pretending = character(length(Model))
+    for (ii in 1:length(Model)){
+      if(any(impostors[,2]==ii)){
+        if(is.null(names)){getImpostors = as.character((c(impostors[impostors[,2]==ii,1])))}
+        if(is.null(names)==FALSE){getImpostors = names[(c(impostors[impostors[,2]==ii,1]))]}
+        Pretending[ii] = paste(getImpostors,collapse=", ") }}
+    
+    idx = sort(delAIC,index.return=TRUE)         # create index to sort by deltaAICc
+    
+    # Sort variables by index to output to table
+    if (is.null(names)==TRUE){Model = Model[idx$ix]}  # model id number
+    if (is.null(names)==FALSE){Model = names[idx$ix]} # model name if available
+    LogLik      = formatC(LogLik[idx$ix],2,format="f")   # log likelihood
+    p        = p[idx$ix]                           # number of parameters
+    AICc     = formatC(AICc[idx$ix],2,format="f")  # AICc or QAICc
+    RootMSE  = RootMSE[idx$ix]                     # RMSE - a measure of variance explained
+    delAICc  = formatC(delAIC[idx$ix],2,format="f")# delta AICc or QAICc
+    W        = formatC(W[idx$ix],3,format="f")     # Akaike weights
+    Wp       = formatC(Wp[idx$ix],3,format="f")     # Akaike weights without pretending models
+    Pretending= Pretending[idx$ix]
+    
+    # make table withouth phi
+    if (is.null(phi)){
+      if(pretend){modelTable = data.frame(Model,LogLik,n,p,AICc,delAICc,W,RootMSE,Wp,Pretending)}
+      else{if (pretend==FALSE){modelTable = data.frame(Model,LogLik,n,p,AICc,delAICc,W,RootMSE)}}}
+    
+    # make table with phi (if dispersion parameter is supplied)
+    if (is.null(phi)==FALSE){
+      QAICc = AICc
+      delQAICc = delAICc;
+      if (pretend){modelTable = data.frame(Model,LogLik,n,p,QAICc,delQAICc,W,RootMSE,Wp,Pretending)}
+      else{if (pretend==FALSE){modelTable = data.frame(Model,LogLik,n,p,QAICc,delQAICc,W,RootMSE)}}
+    }
+    modelTable # return table
+  } else {
+    warning("All models must be either glm or lme4 objects.",call=TRUE)
+  }
+}
+```
+
+
+### Import data:
+```{r import data}
+# gleaner_universe_r_7_19_19 <- read_excel("~/Dropbox/GLEANER UNIVERSE STUDY/data sheets/gleaner_universe_r_7.19.19.xlsx", 
+#     na = "NA")
+
+#use relevent working directory
+gleaner_universe_r_8_15_22 <- read_excel("~/Dropbox/GLEANER UNIVERSE STUDY/data sheets/gleaner_universe_r_08.15.22.xlsx", 
+    na = "NA")
+
+g_u <- gleaner_universe_r_8_15_22
+
+
+# Call_analysis_avgs_R <- read_excel("~/Dropbox/GLEANER UNIVERSE STUDY/data sheets/Call_analysis_avgs_R.xlsx", 
+# +     col_types = c("text", "numeric", "numeric", 
+# +         "numeric", "numeric", "numeric", 
+# +         "numeric", "numeric", "text", "text", 
+# +         "text", "text", "text", "text", "numeric", 
+# +         "text"))
+
+colnames(g_u)
+```
+
+### Guide to Columns: 
+Species = Bat species abbreviations   
+Species_full = Full bat species names   
+ID: Bat ID   
+Sex = (duh)   
+Date Set = Which suite of calls was used (Set 1- 4)   
+Attempt = If we needed to repeat the trials again for some reason, could be 1 and 2   
+Playback = the trial sound played   
+Number = Order of playback 1-21, any extra redo trials at the end   
+Reviewed: mostly unused bc I added it after most reviews, but in theory whether trial was checked over or not    
+exclude: trial shouldn't be included in analysis (bc extra, redo, etc- see note)   
+Then a bunch of callparameters:    
+call_duration   
+"peak_freq"   
+"min_freq"   
+"max_freq"   
+"bandw" = bandwidth   
+"entropy"   
+"peaks"    
+"pulses_call" = n pulses in a call   
+"calls_callgroup"   
+"sum_pulse_duration_callgroup"   
+"duration_callgroup"   
+"call_rate_used"   
+"duty_cycle"   
+"file_time_with_sound" = total amount of playback with sound   
+
+
+### Check and clean data
+```{r data cleaning, include =FALSE}
+colnames(g_u)
+
+#filter by unique species, unique bat names, unique scores, etc. 
+
+sapply(g_u, unique) # applies "unique" function to all the columns in the dataset, gives all the unique values for each
+
+#sex has M, F, "M?" and "NA"
+g_u %>% select(Sex) %>% unique() 
+
+g_u %>% filter(Sex %in% c("M?", NA)) %>% # pull weird sexes
+      select(ID, Sex) %>% # pull IDs with their sex
+      unique #show the unique values
+
+# lamp brac 1 - sex not noted - leave as NA
+# 7 - blankie - sex not noted- leave as NA
+
+# checked original datasheet for midnight cowboy, lists as "male", changing "M?" to "M"
+g_u <- g_u %>% mutate(Sex = replace(Sex, ID== "Loph_silv_5 / Midnight Cowboy", "M"))
+
+
+
+# Set has unknowns
+g_u %>% select(Set) %>% unique() 
+
+g_u %>% filter(!Set %in% c(1:4))
+#number has a lot of weird values, from extra trials- to include or no, depends on trial
+
+# To dos:
+# convert time into real times? - low priority, not that important
+# plot call duration and other acoustic values to find out how well automatic classification did 
+# double check for data duplications by seeing if any two bats' responses exactly match
+
+```
+
+
+### Code "call types"  like "katydid" and "cicada"
+```{r add call categories}
+#Recode a variable with the categories
+
+g_u<- g_u %>% mutate(Call_type = if_else(Playback %in% c("A. spatulata","C. wheeleri","D. gigliotosi" ,"T. subfalcata","V. zederstedi"), "Katydid", 
+      if_else(Playback %in% c( "Acla sp.","Aclodes sp.",  "Anaxipha sp."), "Cricket", 
+      if_else(Playback %in% c("D. diastema", "D. ebraccatus", "D. ebraccatus",  "H. fleishmanni", "P. pustulosus" ,"S. sila"), "Frog", 
+      if_else(Playback %in% c("Q. gigas", "Z. smaragdina"), "Cicada", 
+      if_else(Playback %in% c( "H. frenatus","T. rapicauda" ), "Gecko", 
+      if_else(Playback %in% c("Beetle flight", "Frog hopping" , "Mouse rustles", "Moth sounds" ),"Movement cue", 
+      if_else(Playback %in% c("White noise"), "White noise","Other"
+      
+      ))))))))
+
+
+
+#order factor
+g_u$Call_type<- factor(g_u$Call_type, levels = c( "Cricket" , "Katydid", "Cicada" , "Frog"  ,"Gecko", "Movement cue",    "White noise" ), ordered = TRUE )
+
+unique(g_u$Call_type)
+
+```
+
+*Note* Moth sounds were only played to a few bats, should be removed for some analyses
+
+```{r filter odd variables, include = FALSE }
+#exploring data, organizing
+# unique(g_u$Species)
+# unique(g_u$Species_full)
+# unique(g_u$Playback)
+# class(g_u$Playback)
+# unique(g_u$Response)
+# class(g_u$Response) 
+
+## remove moth sounds for now
+g_u_all <- g_u
+
+#g_u <- subset(g_u, g_u$Playback!= "Moth sounds") 
+
+#remove NAs 
+g_u <- subset(g_u, g_u$Playback!="NA") 
+
+## Just for now remove n= 1s: Micronycteris schmidtorum, glyphonycteris
+#g_u <- subset(g_u, g_u$Species!="Micr_schm" & g_u$Species!="Glyp_davi") 
+
+#use if no moth soundsL
+# g_u$Playback<- factor(g_u$Playback, levels = c( "Acla sp."       ,     "Aclodes sp."   ,  "Anaxipha sp.", "A. spatulata" , "T. subfalcata", "V. zederstedi"  ,  "C. wheeleri" ,  "D. gigliotosi"  , "Q. gigas" ,  "Z. smaragdina"   ,  
+#         "D. diastema" , "H. fleishmanni", "D. ebraccatus" ,  "S. sila"     ,      "P. pustulosus" ,  "H. frenatus" , "T. rapicauda"  , 
+#     "Beetle flight",  "Frog hopping"  , "Mouse rustles", "White noise"), ordered = TRUE )
+
+#Use if moth sounds are included
+g_u$Playback<- factor(g_u$Playback, levels = c( "Acla sp."       ,     "Aclodes sp."   ,  "Anaxipha sp.", "A. spatulata" , "T. subfalcata", "V. zederstedi"  ,  "C. wheeleri" ,  "D. gigliotosi"  , "Q. gigas" ,  "Z. smaragdina"   ,
+        "D. diastema" , "H. fleishmanni", "D. ebraccatus" ,  "S. sila"     ,      "P. pustulosus" ,  "H. frenatus" , "T. rapicauda"  ,
+    "Beetle flight",  "Moth sounds", "Frog hopping"  , "Mouse rustles", "White noise"), ordered = TRUE )
+```
+
+### Add playback amplitudes for the diff categories
+```{r add amplitudes, include = TRUE}
+#####
+# adding in amplitude
+#####
+g_u<- g_u %>% mutate(amplitude = case_when(
+      Call_type == "Katydid" ~ 86.8, 
+      Call_type == "Frog" ~ 75,
+      Call_type == "Gecko" ~ 76.07,
+      Call_type == "Cricket" ~ 70.22,
+      Call_type == "Cicada" ~ 83.07,
+      Playback == "Beetle flight" ~ 41.52,
+      Playback == "Frog hopping"~ 39.52,
+      Playback == "Mouse rustles" ~ 37.66,
+      Playback == "White noise" ~ 75))
+
+```
+
+### Shorten bat species names
+```{r shortened bat species names}
+
+g_u <- g_u %>% mutate(Species_short = case_when(
+      Species_full == "Artibeus jamaicensis" ~ "A. jamaicensis", 
+      Species_full == "Gardnerycteris crenulatum" ~ "Ga. crenulatum",
+      Species_full == "Glyphonycteris daviesi" ~ "Gl. daviesi",
+      Species_full == "Lampronycteris brachiotis" ~ "La. brachiotis",
+      Species_full == "Lonchorina aurita" ~ "Lon. aurita",
+      Species_full == "Lophostoma brasiliense"  ~ "Lop. brasiliense" ,
+      Species_full == "Lophostoma silvicolum" ~ "Lop. silvicolum",
+      Species_full == "Micronycteris hirsuta" ~ "M. hirsuta",
+      Species_full == "Micronycteris microtis" ~ "M. microtis",
+      Species_full == "Micronycteris schmidtorum" ~ "M. schmidtorum",
+      Species_full == "Phyllostomus discolor" ~ "P. discolor",
+      Species_full == "Phyllostomus hastatus" ~ "P. hastatus",
+      Species_full == "Tonatia saurophila" ~ "To. saurophila",
+      Species_full == "Trachops cirrhosus" ~ "Tra. cirrhosus",
+      Species_full == "Trinycteris nicefori"  ~ "Tri. nicefori" ))
+
+g_u <-  g_u %>% relocate(Species_short, .after = Species_full) #move column next to other species columns
+
+
+```
+
+### Original response scale:
+
+0 - no response  
+1 - ears twitch in time with call  
+2 - orients toward sound when playing  
+3- flies towards speaker  
+4 - hovers within .5 m  
+5- lands on speaker  
+
+Recode response with 0, 1, 4, 5, -\> Make a column that codes whether bats:
+0 - (did nothing (0),   
+1- ear twitched or came closer(1-3),  
+4- approached within a half meter (4),  
+5- or landed (5).  
+(collapses 1-3, these distinctions may not be important/ espcalatory across spp.)  
+
+Also make a binary column that just codes whether or not a bat landed. -\>   
+or 0, 1, 2-3,4,5. With the idea that orient and comes closer can be conflated.
+
+```{r recode responses}
+#Recode a variable with 0, 1, 4, 5 
+
+#g_u<- g_u %>% mutate(Response_ApproachLand = if_else(Response %in% c("0","1","2" ,"3"), "0", if_else(Playback %in% c("4"), "4", if_else(Response %in%c("5"),"5", "other"))))
+
+g_u <- g_u %>% mutate(Response_ApproachLand = case_when(
+      Response == 0 ~ 0, 
+      Response == 1 ~ 1,
+      Response == 2 ~ 1,
+      Response == 3 ~ 1,
+      Response == 4 ~ 4, 
+      Response == 5 ~ 5))
+
+g_u <- g_u %>% mutate(Response_Land = case_when(
+      Response == 0 ~ 0, 
+      Response == 1 ~ 0,
+      Response == 2 ~ 0,
+      Response == 3 ~ 0,
+      Response == 4 ~ 0, 
+      Response == 5 ~ 1))
+
+```
+
+
+### Palettes for plots
+```{r palettes, include = TRUE}
+#theme: 
+TM <- theme_calc(base_size = 25) + theme(axis.text.x = element_text(angle = 45, hjust=1), plot.background =element_blank(), legend.title = element_blank()) #tilted x-axis labels and title, no legend title
+
+TM2<-theme_calc(base_size = 25) + theme(axis.text.x = element_text(angle = 45, hjust=1), axis.title.x=element_blank()) #tilted x-axis labels, no x title
+
+TM2.5<-theme_calc(base_size = 25) + theme(axis.text.x = element_text(angle = 45, hjust=1), axis.title.x=element_blank(), legend.position="none") #tilted x-axis labels, no x title
+
+
+TM4<-theme_calc(base_size = 25) + theme(axis.text.x = element_text(angle = 45, hjust=1), axis.title.x=element_blank(), legend.position="none") #tilted x-axis labels, no x title, no legend
+
+
+TM1 <- theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(), legend.title = element_blank(), plot.background =element_blank() ) #blank axes, blank legend title
+
+TM3 <-  theme_calc() +theme(axis.title.x=element_blank(), axis.text.x = element_text(angle = 75, hjust=1), legend.position = "none") #tilted x-axis labels and title, for no size control, remoe base_size argument #for diagonal text, put angle = 45
+
+TM4 <-  theme_calc() +theme(axis.title.x=element_blank(), axis.text.x=element_blank(), legend.position = "none") # no size control, no x axis labels
+
+PL <-  "Spectral"
+PL <- colorRampPalette(brewer.pal(n_colors, "Set3"))
+PL = colorRampPalette(brewer.pal(11, "Spectral"))
+
+#palette with a lot of colors
+c25 <- c("dodgerblue2","#E31A1C", # red
+                "green4",
+                "#6A3D9A", # purple
+                "#FF7F00", # orange
+                "black","gold1",
+                "skyblue2","#FB9A99", # lt pink
+                "palegreen2",
+                "#CAB2D6", # lt purple
+                "#FDBF6F", # lt orange
+                "gray70", "khaki2",
+                "maroon","orchid1","deeppink1","blue1","steelblue4",
+                "darkturquoise","green1","yellow4","yellow3",
+                "darkorange4","brown")
+pie(rep(1,25), col=c25)
+
+n_colors<- length(unique(g_u$Species_full))
+#this is the number of species in the plot/ dataset at any given time, can be used to change the palette
+
+#+ theme(axis.text.x = element_text(angle = 45, hjust=1, size = 14), legend.position = "none") #format x-axis, and remove side legend #hjust 1 aligns labels
+```
+
+### Palette for coloring by Call_type
+```{r Call_type Palette}
+
+# Create a custom color scale (using RColorBrewer)
+library(RColorBrewer)
+CallCatColors <- brewer.pal(7,"Set1")
+
+# Palette rearranged
+CallCatColors <- c("#984EA3", "#4DAF4A", "#377EB8", "#FF7F00", "#E41A1C", "#FFFF33", "#A6A6A6") 
+
+# Alternative palette (OG powerpoint scheme)
+#CallCatColors <- c("#2A769E",  "#4D6123" , "#1E846A" , "#D0892C" , "#973721", "#573AA2" , "#A3A3A3"  )
+
+#Alternative palette 2 (modified powerpoint scheme)
+#CallCatColors <- c("#FDE84C", "#4D6123", "#19657E", "#EE964B", "#8C2635", "#6D3A47", "#A6A6A6")
+
+# View palette
+pie(rep(1,7), col=CallCatColors )
+names(CallCatColors) <- levels(g_u$Call_type)
+colScale_CallCat <- scale_fill_manual(name = "Call_type",values = CallCatColors)
+#and then add the color scale onto the plot as needed
+
+
+```
+
+### Palette for plotting subsets
+```{r plotting subsets}
+  #### settings for plot type 3####
+  G3<- geom_point(position = position_jitter(width = 0.05), size = 5)
+  C3 <- coord_cartesian(ylim = c(0, 5.25))
+  Plt2<-scale_colour_manual(values = PL(n_colors))
+  Xlab2 <-  xlab("Acoustic stimuli")
+  Ylab2 <-  ylab("Response score")
+  Ylab3 <-  ylab(" Average response score")
+  H2 <- 5  #height for plot output default
+  W2<- 13 # height default
+  
+  # "#9E0142" "#CB334C" "#E95D47" "#F88D51" "#FDBE6E" "#FEE593" "#FFFFBF" "#EAF69E" "#BEE5A0" "#88CFA4" "#54AEAC" "#397EB8" "#5E4FA2"
+  
+   #Colors for graphs
+cAJ<- scale_colour_manual(values = c("#9E0142")) #"#9E0142"
+cGC<- scale_colour_manual(values = c("#CB334C"))
+cLaB <- scale_colour_manual(values = c("#E95D47"))
+cLA <- scale_colour_manual(values = c("#F88D51"))
+cLoB <- scale_colour_manual(values = c("#FDBE6E"))
+ cLS <- scale_colour_manual(values = c("#FEE593")) 
+ cMH <- scale_colour_manual(values = c("#FFFFBF"))
+ cMM <- scale_colour_manual(values = c("#EAF69E" ))
+ cPH <- scale_colour_manual(values = c("#BEE5A0" ))
+ cTS <-scale_colour_manual(values = c("#88CFA4" ))
+ cTC <- scale_colour_manual(values = c("#54AEAC"))
+ cTN <-scale_colour_manual(values = c("#397EB8"))
+ cGD <-scale_colour_manual(values = c("#5E4FA2"))
+ # "#5E4FA2"
+ 
+ W3<- 19 #width
+ H3<- 8  #height
+```
+
+### Organizing and exploring data 
+- How many species do I have? 
+- How many bats per species? 
+- What is the sex of all the species? 
+- (table with species, #, #m, #f) - How many playback exemplars per category?
+
+```{r n per species, include = TRUE}
+#summarize # of individuals per species
+n_species <-g_u %>% group_by(Species_full) %>%
+      summarise(N_total = n_distinct(ID, na.rm=TRUE), N_Female = length(unique(ID[Sex == 'F'])), N_Male = length(unique(ID[Sex == 'M']))) %>% arrange(desc(N_total))
+n_species
+#sum total n bats
+total_n <- sum(n_species$N_total)
+total_n
+
+#write.csv(n_species, "n_species.csv")
+
+```
+
+### Data exploration - Which and how many bats species approach or land on potential prey sounds? 
+
+*Which land?*
+
+```{r species that landed, include = TRUE}
+#Pulling out Species that land
+land_sp <- g_u %>% filter(Response == 5) %>% select(Species_full, Playback, Call_type) 
+land_sp 
+
+
+
+#bats landed in 15 instances 
+nrow(land_sp)
+
+# these 5 bat species landed
+unique(land_sp$Species_full)
+
+#these 9 prey species were landed on
+unique(land_sp$Playback)
+
+
+ # plot of total lands and approaches by playback (outlines show which bat spp)
+
+plot_byplayback <- function(RESPONSE= "5"){
+  
+   plot_playback <-   g_u %>%
+       group_by(Call_type) %>%
+       filter(Response >= RESPONSE) %>% 
+       ggplot(aes( x= Playback)) +
+            geom_bar( aes(fill = Call_type,  color = Species_short), na.rm= FALSE) + #color = "Species_short"
+            scale_x_discrete(drop = FALSE) + #keep 0 levels
+            theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+              ggtitle(ifelse(RESPONSE=="5", expression(paste("Number of bats that attacked each playback")), expression(paste("Number of bats that approached or attacked each playback"))))
+   
+ plot_playback   
+}   
+
+plot_byplayback(RESPONSE = "5")
+ 
+
+#plot of total lands by call_category
+ plot_bytype <- function(RESPONSE = "5"){
+  plot_type <- g_u %>%
+       group_by(Call_type) %>%
+       filter(Response >= RESPONSE) %>%
+       ggplot(aes( x= Call_type)) +
+            geom_bar( aes( fill = Playback)) +
+             scale_x_discrete(drop = FALSE) + 
+            theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+              ggtitle(ifelse(RESPONSE=="5", expression(paste("Number of bats that attacked each call type")), expression(paste("Number of bats that approached or attacked each call type"))))
+  plot_type
+ }
+ plot_bytype(RESPONSE = "5")
+
+# THERE ARE 5 species HUNTING using sounds, for sure, hunting 9 things
+```
+
+*Data exploration - Which land or approach?*
+```{r species that landed or approached}
+# Species that land or approach
+
+approach_land_sp <- g_u %>% filter(Response == 5 | Response == 4) %>% select("Species_short", "ID","Playback", "Call_type", "Response", "Notes")
+approach_land_sp
+nrow(approach_land_sp)
+unique(approach_land_sp$Species_short)
+unique(approach_land_sp$Playback)
+
+ # 10 bat species approached or landed on at least one call, including A. jamaicensis (approached mouse rustles (predator inspection?): 
+#  "A. jamaicensis"   "Ga. crenulatum"   "Gl. daviesi"      "Lon. aurita"      "Lop. brasiliense" "Lop. silvicolum"  "M. hirsuta"       "M. microtis"      "P. hastatus"      "Tra. cirrhosus"  
+
+# 22 calls were approached: 
+#  Mouse rustles  H. frenatus    H. fleishmanni P. pustulosus  D. ebraccatus  S. sila     Beetle flight  White noise    Moth sounds    Frog hopping   Q. gigas       C. wheeleri    A. spatulata   T. subfalcata  V. zederstedi  D. gigliotosi  Aclodes sp.    Anaxipha sp.   D. diastema    T. rapicauda   Acla sp.      
+
+
+
+# table of how many times each call was approached or landed on 
+n_app_land_playback<- g_u %>% 
+      group_by(Playback) %>%
+      summarize(n_applands = sum(Response >= 4))
+n_app_land_playback   
+
+
+
+#plot of total lands and approaches by playback (outlines show which bat spp)
+
+plot_byplayback(RESPONSE = "4")
+
+######
+   ###         
+  # this plot drops the category with no approaches (Z. smaragdina)
+      g_u %>%
+       group_by(Call_type) %>%
+       filter(Response >=4) %>% 
+       ggplot(aes( x= Playback)) +
+            geom_bar( aes( fill = Species_short, position = 'dodge'), na.rm= FALSE) +
+           # scale_x_discrete(drop = FALSE) + #keep 0 levels
+            theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+          facet_grid(~ Call_type, drop = TRUE, space = 'free_x', scales = 'free_x', switch = 'x') +
+          theme(panel.spacing.x = unit(0,"line"))  #keeps panels close
+         # theme(strip.placement = 'outside')  # switch the facet strip label to outside 
+
+### 
+
+
+
+# number of times bats approached each *cue category*, and number of times controlled by opportunity (e.g., there were 5 katydid playbacks, but only 1 white noise)
+
+n_app_land_cat<- g_u %>% group_by(Call_type) %>% summarize(n_applands = sum(Response >= 4), # n times each type approached or landed
+      n_playbacks =n_distinct(Playback), # n playbacks in each category
+      n_appland_playbacks = (sum(Response >= 4)/ (n_distinct(Playback))) #n apps/ lands to types when # playbacks/category (opportunities to approach category) is controlled
+                                            )
+n_app_land_cat
+
+#plot of total lands and approaches by call_category
+  plot_bytype(RESPONSE = "4") #plots all responses >4
+ 
+
+```
+
+### plotting bat species mean responses to all sounds - which bats had the highest mean responses?
+
+colored by which bat species landed: 
+```{r  average bat responses to calls high to low}
+
+# put n unique bats below X axis ticks? (not done)
+#make light and dark versions
+ 
+
+#base plot
+p_avg_batspecies<- 
+      g_u %>%
+      mutate(Species_short = fct_reorder(Species_short, Response, .fun='mean')) %>% #reorders the columns from high to low mean response
+      ggplot( aes(x=reorder(Species_short, -Response), y = Response), color = "black") + #the "-" orders it high to low
+      geom_violin() +
+      # geom_point(size = 0.5, position = position_jitter(width = .3, height = 0), color = "lightgreen", alpha = 0.5) +
+      coord_cartesian(ylim = c(0, 5)) + #standardize y axis
+    
+    theme(panel.grid.major = element_blank(), panel.grid.minor =  element_blank(),
+       panel.background = element_rect(fill = 'white'),
+       axis.line = element_line(colour = "black"),
+       text = element_text(color = "black"), 
+       plot.background= element_rect(fill = 'white'),
+
+       legend.position = "none", axis.text.x = element_text(angle = 63, hjust=1, face = "italic"), axis.text =                   element_text(size = 16, color = "black"), axis.title = element_text(size = 16),  )  + #gets rid of                    background
+
+ xlab("Bat species") +
+ylab("Response scores") +
+ggtitle("Mean bat responses to all sounds")
+      
+# color points by if the bat landed
+p_avg_batspecies_land <-  p_avg_batspecies +
+        stat_summary(fun=mean, geom="point", shape=23, size=3, aes(fill= g_u$Response_Land))  
+
+p_avg_batspecies_land
+
+#ggsave("Mean bat species responses to sounds by species.jpg", width = 10, height = 7)
+
+```
+
+
+-  X Make function to plot out one playback species at a time (e.g. c.
+    wheeleri), and to make a plot with each of them and to order them
+    from highest mean response to lowest
+ - X Make X. axes titles shorter (A. jamaicensis)
+ -  make a variable for plot type? (light or dark theme) 
+-  color plots by Call_type (category of call), or Response_Land (if a bat landed on (or approached) something) or
+    if a bat is a known gleaner?
+    - Add n's to x axis labels
+
+
+
+## Plotting Bat  mean responses to each playback- 1 plot per playback: 
+```{r plots - one plot per playback, median bat responses}
+
+#Set up the plots  (alone it looks crazy but it is necessary to color the plots below by call_type
+p_avg_batspecies_calltype <-  p_avg_batspecies + 
+      stat_summary(fun=mean, geom="point", shape=23, size=3, aes(fill= Call_type)) + 
+      colScale_CallCat  #custom scale_fill_manual set outside
+
+      
+#Plot each, color is set by colScale_CallCat and previous plot
+Playback_plots = g_u %>%
+    group_by(Playback) %>%
+    do(Playback_plots = p_avg_batspecies_calltype %+% . + #do applies fn to current group. here it applies  plot to each Playback
+             #facet_wrap(~Playback) + #can use if you want facet labels instead of/with ggtitle
+              ggtitle(paste("Bat responses to", unique(.$Playback))) #+ #makes title current group
+             #ggsave(filename = paste("bat_mean_responses_to_",unique(.$Playback), ".pdf", sep = "")) 
+       ) 
+Playback_plots$Playback_plots
+
+
+```
+
+## Are some sounds more attractive than others? Plots ranked by playback
+-----
+- this is going to be pulled by the different # of bats of different species. could deal with this in a few ways:
+   - weight the average per bat species (account for there being more bats of some species than others. = (average response/ spp1) + (avg response/ spp2)…/ n species,
+  -  Find the max bat response to each call species
+	- Could "normalize" the bat reactions by subtracting the average AJ response from each avg spp response. 
+
+   -Average responses might not be the best indicator- a bat could be a full on gleaner but be a specialist, only flying to one call. What about average MAXIMUM response to the calls per bat? (pull out the maximum response per each bat, get the average for the species. (Did the bats respond strongly to anything? That will pull out bats that responded strongly to something
+
+   - a plot with some measure of difference from AJs: absolute difference in response from AJ mean response? 
+-----   
+   
+plot with all bat responses, prey species on x, colored by whether a bat landed on a playback 
+```{r}
+p_avg_preyspecies <- 
+      g_u %>%
+      mutate(Playback = fct_reorder(Playback, Response, .fun='mean')) %>% #reorders the columns from high to low mean response
+      ggplot( aes(x=reorder(Playback, -Response), y = Response), color = "black") + #the "-" orders it high to low
+      geom_violin() +
+      # geom_point(size = 0.5, position = position_jitter(width = .3, height = 0), color = "lightgreen", alpha = 0.5) +
+      coord_cartesian(ylim = c(0, 5)) + #standardize y axis
+    
+    theme(panel.grid.major = element_blank(), panel.grid.minor =  element_blank(),
+       panel.background = element_rect(fill = 'white'),
+       axis.line = element_line(colour = "black"),
+       text = element_text(color = "black"), 
+       plot.background= element_rect(fill = 'white'),
+       legend.position = "none", 
+       axis.text.x = element_text(angle = 63, hjust=1, face = "italic"), 
+       axis.text = element_text(size = 16, color = "black"), 
+       axis.title = element_text(size = 16),  )  + #gets rid of  background
+
+    xlab("Playback") +
+    ylab("Response scores") +
+    ggtitle("Mean bat responses to sounds")
+      
+# color points by if the bat landed
+p_avg_preyspecies_land <-  p_avg_preyspecies +
+        stat_summary(fun=mean, geom="point", shape=23, size=3, aes(fill= g_u$Response_Land)) +
+        ggtitle("Mean bat responses to sounds, gray = any bat landed ")
+
+p_avg_preyspecies_land
+#ggsave("Mean responses to sounds- gray equals any bat landed.pdf")
+```
+
+plot with all bat responses, prey species on x, colored by call type 
+```{r plot with all prey on X, all bats}
+#Set up the plots  
+p_avg_preyspecies_calltype <-  p_avg_preyspecies + 
+      stat_summary(fun=mean, geom="point", shape=23, size=3, aes(fill= Call_type) ) + 
+      colScale_CallCat + #custom scale_fill_manual set outside
+      theme(legend.position = "right") +
+      labs( color = 'Sound category', fill = 'Sound category') #IDK why changing the legend title this doesn't work
+p_avg_preyspecies_calltype
+
+```
+### plots with all prey on X, 1 plot per bat species, playbacks ranked by mean response
+```{r plot with all prey on X, 1 plot per bat species}
+#Plot each, color is set by colScale_CallCat in previous plot
+Bat_plots = g_u %>%
+    group_by(Species_full) %>%
+    do(Bat_plots = p_avg_preyspecies_calltype %+% . + #do applies fn to current group. here it applies  plot to each Playback
+             #facet_wrap(~Species_full) + #can use if you want facet labels instead of labels with ggtitle
+      ggtitle(paste(unique(.$Species_full)," responses to playbacks (n = ", length(unique(.$ID)), ")", sep ="") ) #+ #makes title current group, n is number of bats          
+             #ggsave(filename = paste(unique(.$Species_full),"responses_to_playbacks", ".pdf", sep = "")) 
+       ) 
+Bat_plots$Bat_plots
+
+
+
+
+
+```
+
+
+
+```{r}
+#Does playback or  bat species predict whether a bat approaches or lands? 
+# recode response into binary- 0 or 1
+#use whatever model works with binary data
+# do model selection, or see whether model is significant, see which species are preferred
+     
+```
+
+
+### D0 different bats have different preferences? 
+
+ cumulative link mixed model
+```{r did bats have different overall responses to playbacks?}
+################ Can put this stat on chart: Different species respond to sounds differently
+
+# Can remove bats with low sample sizes
+# g_u <- g_u %>% filter(Species_full != "Glyphonycteris daviesi")
+# g_u <- g_u %>% filter(Species_full != "Micronycteris schmidtorum")
+
+
+# and remove the 'control' frugivores
+#no AJS
+g_u_2<- subset(g_u, g_u$Species != "Arti_jama")
+
+# Do different bats overall have different responses to sounds?
+# CLMM: Response score ~ Playback 
+
+
+G_U_clmm_pl<- clmm(as.factor(Response) ~ Species_full + (1| ID), data= g_u)
+
+#G_U_clmm_pl<- clmm(as.factor(Response) ~ Species + (1| Number) + (1| ID), data= g_u)
+summary(G_U_clmm_pl)
+
+#get estimated marginal mean responses per species
+sp_em <-emmeans(G_U_clmm_pl, "Species_full")
+sp_em
+#sp_em_cld<- multcomp cld(sp_em, letters=LETTERS)
+#sp_em_cld
+
+
+#plot(sp_em)
+
+#ggsave("emmeans_all_pl.jpg")
+
+```
+
+* To dos: 
+add n's (n_species) to x axis ticks  
+set emmean on response scale  
+add emmeans to g_u then could plot raw data below??
+#normalized bat responses to each prey species? subtracting AJ mean
+response Get AJ mean/median responses to each call make wide with
+species as columns make new column with spp-AJ
+
+*Plot overall emmean responses of bats to calls, ranked by response, dark theme*
+```{r emmeans total bat responses high to low}
+
+#theme_set(theme_classic(), text = element_text(color = "white"))    
+
+p_emmeans_batspecies<- 
+      ggplot(as.data.frame(sp_em), aes(x=reorder(Species_full, -emmean), ymin=asymp.LCL,ymax=asymp.UCL, color = "darkgreen")) +
+      geom_linerange(size = 4, color= "darkolivegreen4") +
+      geom_point(aes(Species_full, emmean, size = 1), color = "darkolivegreen3") +
+  
+       theme(panel.grid.major = element_line(colour = "darkgrey"),
+             panel.grid.minor =  element_blank(),
+             panel.background = element_rect(fill = 'black'),
+             axis.line = element_line(colour = "white"),
+             text = element_text(color = "white"), 
+             plot.background= element_rect(fill = 'black'),
+             legend.position = "none",
+             axis.text.x = element_text(angle = 63, hjust=1, face = "italic"),
+             axis.text = element_text(size = 16, color = "white"),
+             axis.title = element_text(size = 16),  )  + #gets rid of background
+
+       xlab("Bat species") +
+       ylab("Response score estimated marginal means") 
+      
+
+#### workspace, delete, trying to make X labels with N ###
+# scale_x_discrete(  labels=c("location" = "location", "sound" = "sound", "smell" ="odor", "neither" = "control"))
+# 
+# ggtitle(ifelse(species=="AJ", expression(paste("Frugivorous ", italic("Artibeus jamaicensis"))), 
+#                                   expression(paste("Predatory ", italic("Lophostoma silvicolum")))))+
+#####
+
+
+p_emmeans_batspecies
+#ggsave("p_emmeans_call_type.jpg", width = 10, height = 7)
+```
+
+
+
+
+### Do bats respond more overall to some categories compared to others?
+
+cumulative link mixed model of how call type predicts response
+```{r bat response to call categories}
+# should add assumptions check
+
+# CLMM: bat response ~ call type ( number )
+
+unique(g_u$Call_type)
+
+#choose random effects structure
+clmm_call_type<- clmm(as.factor(Response) ~ Call_type + (1| ID), data= g_u)
+clmm_call_type1<- clmm(as.factor(Response) ~ Call_type + (1| ID) + (1| Set), data= g_u)
+rM<-rankModels(list(clmm_call_type, clmm_call_type1))
+rM
+#best to use both random effects
+
+# estimated marginal mean responses by call type
+em_call_type <-emmeans(clmm_call_type1, "Call_type")
+em_call_type
+
+# letter displays (problematic)
+cld_call_type<- multcomp::cld(em_call_type, letters=LETTERS)
+cld_call_type
+
+## note from cld.emmGrid {emmeans} on compact letter displays (cld's): "We warn that such displays encourage a poor practice in interpreting significance tests. CLDs are misleading because they visually group means with comparisons P > alpha as though they are equal, when in fact we have only failed to prove that they differ. As alternatives, consider pwpp (graphical display of P values) or pwpm (matrix display)."
+
+
+pwpm_call_type<- pwpm(em_call_type, letters=LETTERS) #experiment - letter displays
+pwpm_call_type
+pwpp_call_type<- pwpp(em_call_type, letters=LETTERS) #experiment
+contrast(regrid(em_call_type)) #back transformed contrasts 
+
+
+#plot(cld_call_type)
+#ggsave("category_emmeans.jpg")
+```
+plot of estimated mean responses to call types
+```{r}
+theme_set(theme_classic())    
+ggplot(as.data.frame(sp_em), aes(x=reorder(Species_full, -emmean), ymin=asymp.LCL,ymax=asymp.UCL, color = "darkgreen"))
+
+p_emmeans_call_type<- ggplot(cld_call_type, aes(x = reorder(Call_type, -emmean),ymin=asymp.LCL,ymax=asymp.UCL)) + 
+    geom_linerange(size = 1.5, color = "darkolivegreen4") +
+    geom_point(aes(x = Call_type, y = emmean, size = 1), color ="darkolivegreen3", fill = "darkolivegreen3") +
+    theme(panel.grid.major = element_blank(), #light theme (can switch)
+          panel.grid.minor =  element_blank(),
+          panel.background = element_blank(),
+          axis.line = element_line(colour = "black"),
+          legend.position = "none",
+          axis.text.x = element_text(angle = 45, hjust=1),
+          axis.text = element_text(size = 16),
+          axis.title = element_text(size = 16))  + #gets rid of background
+
+    xlab("Call Category") +
+    ylab("Interest score estimated marginal means")
+      
+#geom_point(aes(cld_call_type$emmean, Call_type, colour = Call_type)) +
+
+p_emmeans_call_type
+#ggsave("p_emmeans_call_type.jpg", width = 8, height = 5)
+```
+This is likely including bats that aren't using sounds to hunt, and things that some species like and others do not will be relatively washed out. 
+
+### Do bats approach or land on some categories more than others?
+```{r}
+# bat response ~ category ( number )
+
+clm_AppLand_call_type<- clmm(as.factor(Response_ApproachLand) ~ Call_type + (1|ID) + (1|Set) , data= g_u)
+
+summary(clm_AppLand_call_type)
+
+em_AppLand_call_type <-emmeans(clm_AppLand_call_type, "Call_type")
+em_AppLand_call_type
+cld_AppLand_call_type<- multcomp::cld(em_AppLand_call_type, letters=LETTERS)
+cld_AppLand_call_type
+###
+plot(em_AppLand_call_type)
+class(em_AppLand_call_type)
+
+ m <- glmer(Response_land ~ ~ Call_type + (1|ID) +, data= g_u, family = binomial, control = glmerControl(optimizer = "bobyqa"), nAGQ = 10)
+
+```
+This doesn't seem quite right. 
+
+
+### Acoustics
+
+Look at acoustic parameters of the playbacks (currently the values are averages of each playback type, not unique the the exact call used in a given trial)
+```{r acoustic database}
+df_sounds <- g_u %>% 
+      filter(Set == 1:4) %>%
+      #pull out first column for each unqiue playback and set
+      #distinct(Set, Playback, .keep_all = TRUE) %>%  #use when each set has different values
+      distinct(Playback, .keep_all = TRUE) %>% #pull 1 per playback
+      select(Playback,Set,  call_duration:amplitude) %>%
+      #mutate(Playback_Set = paste(Playback, Set)) %>%
+      relocate( Playback, Set, Call_type ) %>% mutate(call_duration = as.numeric(call_duration))
+
+
+
+ df_sounds %>%
+       pivot_longer(cols= "call_duration":"amplitude",
+                    names_to = "sound_measurements",
+                    values_to = "sound_value",
+                    values_ptypes = list(val = 'character')
+                   ) %>%
+       ggplot(aes(x = Playback)) +
+      geom_point(aes(y=sound_value, color = Call_type)) +
+      facet_wrap(~ sound_measurements, scales = "free_y") +
+ 
+       #scale_y_continuous(trans='log10') +
+       theme(axis.text.x = element_text(angle = 45, hjust=1)) 
+       
+
+
+
+```
+
+
+
+
+## Old plots - ignore
+Response bat species average responses to different groups:((cant really
+do averages on ordinal scales, but works for visualization))
+
+```{r mean responses to call categories}
+Resp_avg<-g_u %>% group_by(Species_full, Playback ) %>%
+      summarise(Resp_average = mean(Response, na.rm=TRUE))
+Resp_avg
+```
+
+```{r}
+g_u_p <- ggplot(data = g_u, aes(x = Playback, y = Response, colour = Species_full))
+
+g_u_p <- g_u_p + geom_point(position = position_jitter(width = 0.1), size = 5)
+g_u_p <- g_u_p + coord_cartesian(ylim = c(0, 5.25))
+g_u_p <- g_u_p + scale_colour_manual(values = PL(n_colors))
+g_u_p <- g_u_p + TM2
+g_u_p <- g_u_p +  xlab("Acoustic stimuli")
+g_u_p <- g_u_p +  ylab("Response score") 
+
+g_u_p
+
+
+#ggsave("gleaner_universe_fulltemp.jpg", width = 19, height = 8)
+
+```
+
+```{r}
+g_u_pl <- ggplot(data = g_u, aes(x = Playback, y = Response, colour = Species_full))
+
+g_u_pl <- g_u_pl + geom_point(position = position_jitter(width = 0.05), size = 5)
+g_u_pl <- g_u_pl + coord_cartesian(ylim = c(0, 5.25))
+g_u_pl <- g_u_pl + scale_colour_manual(values = PL(n_colors))
+g_u_pl <- g_u_pl + TM3 #can take out x legend line if I want, TM3 or TM4
+g_u_pl <- g_u_pl +  xlab("Acoustic stimuli")
+g_u_pl <- g_u_pl +  ylab("Response score") + facet_wrap(~ Species_full) #this makes a nice facet
+
+g_u_pl
+#ggsave("faceted_responses_Full_X.jpg", width = 12)
+
+```
+
+########################## 
+
+########################## 
+
+AVERAGES
+
+```{r}
+Resp_avg
+
+g_u_p_avg <- ggplot(data = Resp_avg, aes(x = Playback, y = Resp_average, colour = Species_full))
+g_u_p_avg  <- g_u_p_avg  + geom_point(size = 8)
+#g_u_p_avg  <- g_u_p_avg  + geom_point(position = position_jitter(width = 0.1))
+g_u_p <- g_u_p + coord_cartesian(ylim = c(0, 5.25))
+g_u_p_avg <- g_u_p_avg + TM
+g_u_p_avg <- g_u_p_avg + scale_colour_manual(values = PL(n_colors))
+g_u_p_avg <- g_u_p_avg +  xlab("Acoustic stimuli")
+g_u_p_avg <- g_u_p_avg +  ylab("Mean response score")
+g_u_p_avg 
+
+ #
+ #ggsave("gleaner_universe_avgtemp.jpg",  height = 8 ,width = 19) 
+
+#save with tilty text, save with 8 x 17 defaults
+#save without x axis
+```
+
+No axes graph 1
+
+```{r}
+
+g_u_p_nax <- g_u_p + TM1
+
+ #ggsave("gleaner_universe_full_NAX.jpg", width = 17, height = 8)
+
+
+
+```
+
+No axes graph 2
+
+```{r}
+
+g_u_p_avg_NAX  <- g_u_p_avg + TM1
+g_u_p_avg_NAX
+
+ #ggsave("gleaner_universe_avg_NAX.jpg", width = 17, height = 8)
+
+#Saving 17 x 3.91 in image
+```
+
+##faceted
+```{r}
+head(Resp_avg)
+
+g_u_p_avg_f <- ggplot(data = Resp_avg, aes(x = Playback, y = Resp_average, colour = Species_full))
+g_u_p_avg_f  <- g_u_p_avg_f  + geom_point(size = 5)
+#g_u_p_avg_f  <- g_u_p_avg_f  + geom_point(position = position_jitter(width = 0.1))
+g_u_p <- g_u_p + coord_cartesian(ylim = c(0, 5.25))
+g_u_p_avg_f <- g_u_p_avg_f + TM4
+g_u_p_avg_f <- g_u_p_avg_f + scale_colour_manual(values = PL(n_colors))
+g_u_p_avg_f <- g_u_p_avg_f +  xlab("Acoustic stimuli")
+g_u_p_avg_f <- g_u_p_avg_f +  ylab("Mean response score")
+g_u_p_avg_f  <- g_u_p_avg_f + facet_wrap(~ Species_full)
+g_u_p_avg_f
+ #
+ #ggsave("gleaner_universe_avg_facet_noX.jpg", width = 11) # height = 8 ,width = 17) 
+
+#save with tilty text, save with 8 x 17 defaults
+#save without x axis
+```
+
+########################### 
+
+########################### 
+
+##SUBSETS##
+
+The quick and dirty way to make color palette names [1] Art jam
+"#9E0142" "#CB334C" "#E95D47" "#F88D51" "#FDBE6E" [6] "#FEE593"
+"#FFFFBF" "#EAF69E" "#BEE5A0" "#88CFA4" [11] "#54AEAC" "#397EB8"
+"#5E4FA2"
+
+Trac Cirr PLOT with axes. use TM4 FOR NO AXES
+
+```{r Trac Cirr}
+g_u_p_TC <- ggplot(data = g_u[g_u$Species =="Trac_cirr",], aes(x = Playback, y = Response, colour = Species_full))
+
+g_u_p_TC <- g_u_p_TC + G3 +C3 + TM3 + Xlab2 + Ylab2  +cTC
+g_u_p_TC
+
+#ggsave("gleaner_universe_TC.jpg", width = W3, height = H3)
+
+#and TC's with AVERAGES
+
+
+g_u_p_TC_a <- ggplot(data = Resp_avg[Resp_avg$Species_full =="Trachops cirrhosus",], aes(x = Playback, y = Resp_average, colour = Species_full))
+
+g_u_p_TC_a <- g_u_p_TC_a + G3 +C3 + TM3 + Xlab2 + Ylab2  +cTC
+g_u_p_TC_a
+
+#ggsave("gleaner_universe_TC_avg.jpg",  width = W3, height = H3)
+
+```
+
+AJ PLOT with axes. use TM4 FOR NO AXES
+
+```{r}
+g_u_p_AJ <- ggplot(data = g_u[g_u$Species =="Arti_jama",], aes(x = Playback, y = Response, colour = Species_full))
+
+g_u_p_AJ <- g_u_p_AJ + G3 +C3 + TM4 + Xlab2 + Ylab2  +cAJ
+g_u_p_AJ
+
+#ggsave("gleaner_universe_AJ.jpg", width = W3, height = H3)
+
+#and AJ's with AVERAGES
+
+
+g_u_p_AJ_a <- ggplot(data = Resp_avg[Resp_avg$Species_full =="Artibeus jamaicensis",], aes(x = Playback, y = Resp_average, colour = Species_full))
+
+g_u_p_AJ_a <- g_u_p_AJ_a + G3 +C3 + TM4 + Xlab2 + Ylab2  +cAJ
+g_u_p_AJ_a
+
+#ggsave("gleaner_universe_AJ_avg.jpg", width = W3, height = H3)
+
+```
+
+AJ ALL GRAPH
+
+```{r}
+##EXPERIMENTS: ADDING MEANS TO SAME PLOT
+
+
+g_u_p_AJ <- ggplot(data = g_u[g_u$Species =="Arti_jama",], aes(x = Playback, y = Response, colour = Species_full))
+g_u_p_AJ <- g_u_p_AJ + G3 +  C3 + TM4 + Xlab2 + Ylab2  +cAJ + #all parameters for general data
+      
+      geom_point(data =Resp_avg[Resp_avg$Species_full =="Artibeus jamaicensis",], mapping=aes(x = Playback, y = Resp_average), color = "black", shape=17, size = 4) #parameters for the averages
+     
+g_u_p_AJ
+
+#ggsave("gleaner_universe_AJ_a.jpg", width = W3, height = H3)
+
+```
+
+```{r}
+##EXPERIMENTS: ADDING MEANS TO SAME PLOT
+
+
+
+
+g_u_p_TC <- ggplot(data = g_u[g_u$Species =="Trac_cirr",], aes(x = Playback, y = Response, colour = Species_full))
+
+g_u_p_TC <- g_u_p_TC + G3 +C3 + TM4 + Xlab2 + Ylab2  +cTC + #all parameters for general data
+      
+      geom_point(data =Resp_avg[Resp_avg$Species_full =="Trachops cirrhosus",], mapping=aes(x = Playback, y = Resp_average), color = "black", shape=17, size = 4 ) #parameters for the averages
+     
+g_u_p_TC
+
+#ggsave("gleaner_universe_TC_a.jpg", width = W3, height = H3)
+
+
+```
+
+```{r}
+##EXPERIMENTS: ADDING MEANS TO SAME PLOT
+
+
+g_u_p_LS <- ggplot(data = g_u[g_u$Species =="Loph_silv",], aes(x = Playback, y = Response, colour = Species_full))
+
+g_u_p_LS <- g_u_p_LS + G3 +C3 + TM3 + Xlab2 + Ylab2  +cLS + #all parameters for general data
+      
+      geom_point(data =Resp_avg[Resp_avg$Species_full =="Lophostoma silvicolum",], mapping=aes(x = Playback, y = Resp_average), color = "black", shape=17, size = 4 ) #parameters for the averages
+     
+g_u_p_LS
+
+##ggsave("gleaner_universe_LS_a.jpg", width = W3, height = H3)
+
+
+```
+
+LOPH BRASILIENSE
+
+```{r}
+##EXPERIMENTS: ADDING MEANS TO SAME PLOT
+
+
+g_u_p_LoB <- ggplot(data = g_u[g_u$Species =="Loph_bras",], aes(x = Playback, y = Response, colour = Species_full))
+
+g_u_p_LoB <- g_u_p_LoB + G3 +C3 + TM4 + Xlab2 + Ylab2  +cLoB + #all parameters for general data
+      
+      geom_point(data =Resp_avg[Resp_avg$Species_full =="Lophostoma brasiliense",], mapping=aes(x = Playback, y = Resp_average), color = "black", shape=17, size = 4 ) #parameters for the averages
+     
+g_u_p_LoB
+
+#ggsave("gleaner_universe_LoB_a.jpg", width = W3, height = H3)
+
+
+```
+
+PHYLLOSTOMUS HASTATUS
+
+```{r}
+
+g_u_p_PH <- ggplot(data = g_u[g_u$Species =="Phyl_hast",], aes(x = Playback, y = Response, colour = Species_full))
+
+g_u_p_PH <- g_u_p_PH + G3 +C3 + TM4 + Xlab2 + Ylab2  +cPH + #all parameters for general data
+      
+      geom_point(data =Resp_avg[Resp_avg$Species_full =="Phyllostomus hastatus",], mapping=aes(x = Playback, y = Resp_average), color = "black", shape=17, size = 4 ) #parameters for the averages
+     
+g_u_p_PH
+
+#ggsave("gleaner_universe_PH_a.jpg", width = W3, height = H3)
+
+```
+
+Lampronycteris brachiotis
+
+```{r}
+
+g_u_p_LaB <- ggplot(data = g_u[g_u$Species =="Lamp_brach",], aes(x = Playback, y = Response, colour = Species_full))
+
+g_u_p_LaB <- g_u_p_LaB + G3 +C3 + TM4 + Xlab2 + Ylab2  +cLaB + #all parameters for general data
+      
+      geom_point(data =Resp_avg[Resp_avg$Species_full =="Lampronycteris brachiotis",], mapping=aes(x = Playback, y = Resp_average), color = "black", shape=17, size = 4 ) #parameters for the averages
+     
+g_u_p_LaB
+
+#ggsave("gleaner_universe_LaB_a.jpg", width = W3, height = H3)
+
+
+```
+
+Trinycteris nicefori
+
+```{r}
+
+g_u_p_Trn <- ggplot(data = g_u[g_u$Species =="Trin_nice",], aes(x = Playback, y = Response, colour = Species_full))
+
+g_u_p_Trn <- g_u_p_Trn + G3 +C3 + TM4 + Xlab2 + Ylab2  +cLaB + #all parameters for general data
+      
+      geom_point(data =Resp_avg[Resp_avg$Species_full =="Trinycteris nicefori",], mapping=aes(x = Playback, y = Resp_average), color = "black", shape=17, size = 4 ) #parameters for the averages
+     
+g_u_p_Trn
+#rm(g_u_p_Trn)
+#ggsave("gleaner_universe_Trn_a.jpg", width = W3, height = H3)
+
+
+```
+
+Lonchorina aurita
+
+```{r}
+
+g_u_p_Loa <- ggplot(data = g_u[g_u$Species =="Lonc_auri",], aes(x = Playback, y = Response, colour = Species_full))
+
+g_u_p_Loa <- g_u_p_Loa + G3 +C3 + TM3 + Xlab2 + Ylab2  +cLA + #all parameters for general data
+      
+      geom_point(data =Resp_avg[Resp_avg$Species_full =="Lonchorina aurita",], mapping=aes(x = Playback, y = Resp_average), color = "black", shape=17, size = 4 ) #parameters for the averages
+     
+g_u_p_Loa
+#rm(g_u_p_Loa)
+#ggsave("gleaner_universe_Loa_b.jpg", width = 9, height = H2)
+#5 13
+
+```
+
+Glyphonycteris daviesi
+```{r Glyp davi}
+
+g_u_p_Gld <- ggplot(data = g_u[g_u$Species =="Glyp_davi",], aes(x = Playback, y = Response, colour = Species_full))
+
+g_u_p_Gld <- g_u_p_Gld + geom_point(size=5) +C3 + TM2.5 + Xlab2 + Ylab2  + cGD + #all parameters for general data
+      
+      geom_point(data =Resp_avg[Resp_avg$Species_full =="Glyphonycteris daviesi",], mapping=aes(x = Playback, y = Resp_average), color = "black", shape=17, size = 4 ) #parameters for the averages
+     
+g_u_p_Gld
+#rm(g_u_p_Gld)
+ggsave("gleaner_universe_Glyphdavi.jpg", width = 9, height = H2)
+#5 13
+
+```
+
+```{r Gard cren}
+##EXPERIMENTS: ADDING MEANS TO SAME PLOT
+
+
+
+
+g_u_p_GC <- ggplot(data = g_u[g_u$Species =="Gard_cren",], aes(x = Playback, y = Response, colour = Species_full))
+
+g_u_p_GC <- g_u_p_GC + G3 +C3 + TM4 + Xlab2 + Ylab2  +cGC + #all parameters for general data
+      
+      geom_point(data =Resp_avg[Resp_avg$Species_full =="Gardnerycteris crenulatum",], mapping=aes(x = Playback, y = Resp_average), color = "black", shape=17, size = 4 ) #parameters for the averages
+     
+g_u_p_GC
+
+#ggsave("gleaner_universe_GC_a.jpg", width = 9, height = H2)
+
+
+```
+
+## generalizable p1 and p2 things
+
+```{r}
+
+###settings for plot type 1###
+  G1<- geom_point(size = 5) 
+  G <- geom_point( size = 5, position = position_jitter(width = 0.1))
+  C <- coord_cartesian(ylim =c(0, 5.25)) 
+  Plt<-scale_colour_manual(values = PL(n_colors))
+  Xlab1 <-  xlab("Acoustic stimuli")
+  Ylab1 <-  ylab("Response score")
+  FW <- facet_wrap(~ Species_full)
+  
+  #### plot 2####
+  G2 <- geom_point()
+  GG2 <- geom_point(position = position_jitter(width = 0.1), size = 3)
+  C2 <- coord_cartesian(ylim = c(0, 5.25))
+  Plt2<-scale_colour_manual(values = PL(n_colors))
+  Xlab2 <-  xlab("Acoustic stimuli")
+  Ylab2 <-  ylab("Response score")
+  FW2<- facet_wrap(~ Playback) #ncol controls the number of columns, could easily be 2
+  H2 <- 5  #height for plot output default
+  W2<- 13 # height default
+  
+```
+
+## Cicadas
+
+cicada plot 1
+
+```{r}
+cicada <- subset( g_u, g_u$Playback == "Q. gigas" | g_u$Playback == "Z. smaragdina")
+
+cicada_p_1 <- ggplot(data = cicada, aes(x = Playback, y = Response, colour = Species_full))
+#cicada_p_1  <- cicada_p_1    #geom_point(size = 5) 
+cicada_p_1  <- cicada_p_1  + G   #geom_point(position = position_jitter(width = 0.1))
+cicada_p_1 <- cicada_p_1 + C # coord_cartesian(ylim = c(0, 5.25))
+cicada_p_1 <- cicada_p_1 + TM4
+cicada_p_1 <- cicada_p_1 + Plt #scale_colour_manual(values = PL(n_colors))
+cicada_p_1 <- cicada_p_1 +  Xlab1 #xlab("Acoustic stimuli")
+cicada_p_1 <- cicada_p_1 +  Ylab1 #ylab("Mean response score")
+cicada_p_1 <- cicada_p_1 +  FW #facet_wrap(~ Species_full)
+cicada_p_1 
+
+#shorthand
+cicada_p_1 <- ggplot(data = cicada, aes(x = Playback, y = Response, colour = Species_full))   + G + C  + TM4 + Plt+  Xlab1 +  Ylab1 +  FW 
+cicada_p_1 
+ 
+ #ggsave("cicadas_plot1.jpg")
+
+#save with tilty text, save with 8 x 17 defaults
+#save without x axis
+
+```
+
+cicada plot 2
+
+```{r}
+
+cicada_p_2 <- ggplot(data = cicada, aes(x = Species_full, y = Response, colour = Species_full))
+cicada_p_2  <- cicada_p_2  + geom_point(position = position_jitter(width = 0.1)) #size = 5
+
+cicada_p_2 <- cicada_p_2 + coord_cartesian(ylim = c(0, 5.25))
+cicada_p_2 <- cicada_p_2 + TM2
+cicada_p_2 <- cicada_p_2 + scale_colour_manual(values = PL(n_colors))
+cicada_p_2 <- cicada_p_2 +  xlab("Acoustic stimuli")
+cicada_p_2 <- cicada_p_2 +  ylab("Response score")
+cicada_p_2 <- cicada_p_2 + facet_wrap(~ Playback, ncol =2) #ncol controls the number of columns, could easily be 2
+cicada_p_2 
+
+#shorthand
+cicada_p_2  <-cicada_p_2 <- ggplot(data = cicada, aes(x = Species_full, y = Response, colour = Species_full)) +  GG2  + C2 + TM3 + Plt2 + Xlab2 +Ylab2 +FW2
+cicada_p_2
+ 
+ #ggsave("cicadas_plot2.jpg", width = 7, height =7)
+Z_smar = subset(cicada, cicada$Playback == "Z. smaragdina")
+
+p_Z.smar<- p_Z.smar <- ggplot(data = Z_smar, aes(x = Species_full, y = Response, colour = "yellow4"))
+p_Z.smar  <- p_Z.smar  + geom_point(position = position_jitter(width = 0.08), size = 3) #size = 5
+p_Z.smar <- p_Z.smar + coord_cartesian(ylim = c(0, 5.25))
+p_Z.smar <- p_Z.smar + TM2.5
+p_Z.smar <- p_Z.smar + scale_colour_manual(values = "turquoise3")
+p_Z.smar <- p_Z.smar +  xlab("Acoustic stimuli")
+p_Z.smar <- p_Z.smar +  ylab("Response score")
+
+p_Z.smar 
+  
+#  ggsave("p_Z.smar.jpg", width = 8,  height = 7)
+
+
+Q_gigas = subset(cicada, cicada$Playback == "Q. gigas")
+
+p_Q.gigas<- p_Q.gigas <- ggplot(data = Q_gigas, aes(x = Species_full, y = Response, colour = "yellow4"))
+p_Q.gigas  <- p_Q.gigas  + geom_point(position = position_jitter(width = 0.08), size = 3) #size = 5
+p_Q.gigas <- p_Q.gigas + coord_cartesian(ylim = c(0, 5.25))
+p_Q.gigas <- p_Q.gigas + TM2.5
+p_Q.gigas <- p_Q.gigas + scale_colour_manual(values = "yellow4")
+p_Q.gigas <- p_Q.gigas +  xlab("Acoustic stimuli")
+p_Q.gigas <- p_Q.gigas +  ylab("Response score")
+
+p_Q.gigas 
+  
+#  ggsave("p_Q.gigas.jpg", width = 8,  height = 7)
+
+
+
+
+
+
+```
+
+## cicadas averages
+
+cicada plot 1
+
+```{r}
+cicada_avg <- subset( Resp_avg, Resp_avg$Playback == "Q. gigas" | Resp_avg$Playback == "Z. smaragdina")
+
+cicada_p_1_a <- ggplot(data = cicada_avg, aes(x = Playback, y = Resp_average, colour = Species_full))  + G + C  + TM4 + Plt+  Xlab1 +  Ylab1 +  FW 
+cicada_p_1_a 
+
+ 
+ #ggsave("cicadas_plot1_avg.jpg")
+
+
+
+##cicada plot 2
+
+
+cicada_p_2_a <- ggplot(data = cicada_avg, aes(x = Species_full, y = Resp_average, colour = Species_full))   + GG2  + C2 + TM3 + Plt2 + Xlab2 +Ylab2 + FW2
+cicada_p_2_a
+
+ 
+ #ggsave("cicadas_plot2_avg.jpg", width = W2, height = H2)
+
+```
+
+## Crickets
+
+cricket plot 1
+
+```{r}
+cricket <- subset( g_u, g_u$Playback == "Acla sp." | g_u$Playback == "Anaxipha sp." | g_u$Playback == "Aclodes sp.")
+
+cricket_p_1 <- ggplot(data = cricket, aes(x = Playback, y = Response, colour = Species_full))  + G + C  + TM4 + Plt+  Xlab1 +  Ylab1 +  FW 
+cricket_p_1 
+
+ 
+ #ggsave("crickets_plot1.jpg")
+
+
+
+```
+
+cricket plot 2
+
+```{r}
+
+cricket_p_2 <- ggplot(data = cricket, aes(x = Species_full, y = Response, colour = Species_full))   + GG2  + C2 + TM3 + Plt2 + Xlab2 +Ylab2 +FW2
+cricket_p_2 
+
+ 
+ #ggsave("crickets_plot2.jpg", width = W2, height = H2)
+
+```
+
+## crickets averages
+
+cricket plot 1
+
+```{r}
+cricket_avg <- subset( Resp_avg, Resp_avg$Playback == "Acla sp." | Resp_avg$Playback == "Anaxipha sp." | Resp_avg$Playback == "Aclodes sp.")
+
+cricket_p_1_a <- ggplot(data = cricket_avg, aes(x = Playback, y = Resp_average, colour = Species_full))    + G + C  + TM4 + Plt+  Xlab1 +  Ylab1 +  FW 
+cricket_p_1_a 
+
+ 
+ #ggsave("crickets_plot1_avg.jpg")
+
+
+
+##cricket plot 2
+
+
+cricket_p_2_a <- ggplot(data = cricket_avg, aes(x = Species_full, y = Resp_average, colour = Species_full))   + GG2  + C2 + TM3 + Plt2 + Xlab2 +Ylab2 + FW2
+cricket_p_2_a
+
+ 
+ #ggsave("crickets_plot2_avg.jpg", width = W2, height = H2)
+
+```
+
+#INCIDENTAL SOUNDS incidenteal plot 1
+
+```{r}
+incidental <- subset( g_u, g_u$Playback == "Beetle flight" | g_u$Playback == "Frog hopping" | g_u$Playback == "Mouse rustles")
+
+incidental_p_1 <- ggplot(data = incidental, aes(x = Playback, y = Response, colour = Species_full))    + G + C  + TM4 + Plt+  Xlab1 +  Ylab1 +  FW 
+incidental_p_1 
+
+ 
+ #ggsave("incidentals_plot1.jpg")
+
+
+```
+
+incidental plot 2
+
+```{r}
+
+incidental_p_2 <- ggplot(data = incidental, aes(x = Species_full, y = Response, colour = Species_full)) +  GG2  + C2 + TM3 + Plt2 + Xlab2 +Ylab2 +FW2
+incidental_p_2 
+
+ 
+ #ggsave("incidentals_plot2.jpg", width = W2, height = H2)
+
+```
+
+## incidentals averages
+
+incidental plot 1
+
+```{r}
+
+incidental_avg <- subset( Resp_avg, Resp_avg$Playback == "Beetle flight" | Resp_avg$Playback == "Frog hopping" | Resp_avg$Playback == "Mouse rustles")
+
+incidental_p_1_a <- ggplot(data = incidental_avg, aes(x = Playback, y = Resp_average, colour = Species_full))    + G + C  + TM4 + Plt+  Xlab1 +  Ylab1 +  FW 
+incidental_p_1_a 
+
+ 
+ #ggsave("incidentals_plot1_avg.jpg")
+
+
+
+##incidental plot 2
+
+
+incidental_p_2_a <- ggplot(data = incidental_avg, aes(x = Species_full, y = Resp_average, colour = Species_full))   + GG2  + C2 + TM3 + Plt2 + Xlab2 +Ylab2 + FW2
+incidental_p_2_a
+
+ 
+ #ggsave("incidentals_plot2_avg.jpg", width = W2, height = H2)
+
+```
+
+#White SOUNDS incidenteal plot 1
+
+```{r}
+White <- subset( g_u, g_u$Playback == "White noise")
+
+White_p_1 <- ggplot(data = White, aes(x = Playback, y = Response, colour = Species_full))    + G + C  + TM4 + Plt+  Xlab1 +  Ylab1 +  FW 
+White_p_1 
+
+ 
+ #ggsave("Whites_plot1.jpg")
+
+
+```
+
+White plot 2
+
+```{r}
+
+White_p_2 <- ggplot(data = White, aes(x = Species_full, y = Response, colour = Species_full)) +  GG2  + C2 + TM3 + Plt2 + Xlab2 +Ylab2 +FW2
+White_p_2 
+
+ 
+ #ggsave("Whites_plot2.jpg", width = W2, height = H2)
+
+```
+
+## Whites averages
+
+White plot 1
+
+```{r}
+
+White_avg <- subset( Resp_avg, Resp_avg$Playback == "White noise") 
+
+White_p_1_a <- ggplot(data = White_avg, aes(x = Playback, y = Resp_average, colour = Species_full))    + G + C  + TM4 + Plt+  Xlab1 +  Ylab1 +  FW 
+White_p_1_a 
+
+ 
+ #ggsave("Whites_plot1_avg.jpg")
+
+
+
+##White plot 2
+
+
+White_p_2_a <- ggplot(data = White_avg, aes(x = Species_full, y = Resp_average, colour = Species_full))   + GG2  + C2 + TM3 + Plt2 + Xlab2 +Ylab2 + FW2
+White_p_2_a
+
+ 
+ #ggsave("Whites_plot2_avg.jpg", width = W2, height = H2)
+
+```
+
+\`
+
+## geckos
+
+gecko plot 1
+
+```{r}
+gecko <- subset( g_u, g_u$Playback == "H. frenatus" | g_u$Playback == "T. rapicauda")
+
+gecko_p_1 <- ggplot(data = gecko, aes(x = Playback, y = Response, colour = Species_full))    + G + C  + TM4 + Plt+  Xlab1 +  Ylab1 +  FW 
+gecko_p_1 
+
+ 
+ #ggsave("geckos_plot1.jpg")
+
+
+
+```
+
+gecko plot 2
+
+```{r}
+
+gecko_p_2 <- ggplot(data = gecko, aes(x = Species_full, y = Response, colour = Species_full))   + GG2  + C2 + TM3 + Plt2 + Xlab2 +Ylab2 +FW2
+gecko_p_2 
+
+ 
+ #ggsave("geckos_plot2.jpg", width = W2, height = H2)
+
+```
+
+## geckos averages
+
+gecko plot 1
+
+```{r}
+gecko_avg <- subset( Resp_avg, Resp_avg$Playback == "H. frenatus" | Resp_avg$Playback == "T. rapicauda")
+
+gecko_p_1_a <- ggplot(data = gecko_avg, aes(x = Playback, y = Resp_average, colour = Species_full))    + G + C  + TM4 + Plt+  Xlab1 +  Ylab1 +  FW 
+gecko_p_1_a 
+
+ 
+ #ggsave("geckos_plot1_avg.jpg")
+
+
+
+##gecko plot 2
+
+
+gecko_p_2_a <- ggplot(data = gecko_avg, aes(x = Species_full, y = Resp_average, colour = Species_full))   + GG2  + C2 + TM3 + Plt2 + Xlab2 +Ylab2 + FW2
+gecko_p_2_a
+
+ 
+ #ggsave("geckos_plot2_avg.jpg", width = W2, height = H2)
+
+```
+
+## Frogs
+
+frog plot 1
+
+```{r}
+frog <- subset( g_u, g_u$Playback == "H. fleishmanni" | g_u$Playback == "D. diastema" | g_u$Playback == "D. ebraccatus "| g_u$Playback == "P. pustulosus" | g_u$Playback =="S. sila")
+
+frog_p_1 <- ggplot(data = frog, aes(x = Playback, y = Response, colour = Species_full))    + G + C  + TM4 + Plt+  Xlab1 +  Ylab1 +  FW 
+frog_p_1 
+
+ 
+ #ggsave("frogs_plot1.jpg")
+
+ 
+   Trac_frog_p <-    ggplot(data = subset(frog, frog$Species =="Trac_cirr"), aes(x = Playback, y = Response, colour = Playback))    + G + C  + TM3 + Plt+  Xlab1 +  Ylab1 +  FW 
+   Trac_frog_p
+   ggsave("Trac_frog_p.jpg")
+frog_p_1 
+ 
+
+```
+
+frog plot 2
+
+```{r}
+
+frog_p_2 <- ggplot(data = frog, aes(x = Species_full, y = Response, colour = Species_full))   + GG2  + C2 + TM3 + Plt2 + Xlab2 +Ylab2 +FW2
+frog_p_2 
+
+ 
+ #ggsave("frogs_plot2.jpg", width = W2, height = H2)
+
+```
+
+## frogs averages
+
+frog plot 1
+
+```{r}
+frog_avg <- subset( Resp_avg, Resp_avg$Playback == "H. fleishmanni" | Resp_avg$Playback == "D. diastema" | Resp_avg$Playback == "D. ebraccatus "| Resp_avg$Playback == "P. pustulosus" | Resp_avg$Playback =="S. sila")
+
+frog_p_1_a <- ggplot(data = frog_avg, aes(x = Playback, y = Resp_average, colour = Species_full))    + G + C  + TM4 + Plt+  Xlab1 +  Ylab1 +  FW 
+frog_p_1_a 
+
+ 
+ #ggsave("frogs_plot1_avg.jpg")
+
+
+
+##frog plot 2
+
+
+frog_p_2_a <- ggplot(data = frog_avg, aes(x = Species_full, y = Resp_average, colour = Species_full))   + GG2  + C2 + TM3 + Plt2 + Xlab2 +Ylab2 + FW2
+frog_p_2_a
+
+ 
+ #ggsave("frogs_plot2_avg.jpg", width = W2, height = H2)
+
+```
+
+## katydids
+
+katydid plot 1
+
+```{r}
+katydid <- subset( g_u, g_u$Playback == "A. spatulata" | g_u$Playback == "C. wheeleri" | g_u$Playback == "D. gigliotosi"| g_u$Playback == "T. subfalcata" | g_u$Playback =="V. zederstedi")
+
+katydid_p_1 <- ggplot(data = katydid, aes(x = Playback, y = Response, colour = Species_full))    + G + C  + TM3 + Plt+  Xlab1 +  Ylab1 +  FW 
+katydid_p_1
+
+ 
+ #ggsave("katydids_plot1_axis.jpg")
+
+
+
+```
+
+katydid plot 2
+
+```{r}
+
+katydid_p_2 <- ggplot(data = katydid, aes(x = Species_full, y = Response, colour = Species_full))   + GG2  + C2 + TM3 + Plt2 + Xlab2 +Ylab2 +FW2
+katydid_p_2 
+
+ 
+ #ggsave("katydids_plot2.jpg", width = W2, height = H2)
+
+```
+
+## katydids averages
+
+katydid plot 1
+
+```{r}
+katydid_avg <- subset( Resp_avg, Resp_avg$Playback == "A. spatulata" | Resp_avg$Playback == "C. wheeleri" | Resp_avg$Playback == "D. gigliotosi"| Resp_avg$Playback == "T. subfalcata" | Resp_avg$Playback =="V. zederstedi")
+
+katydid_p_1_a <- ggplot(data = katydid_avg, aes(x = Playback, y = Resp_average, colour = Species_full))    + G + C  + TM3 + Plt+  Xlab1 +  Ylab1 +  FW 
+katydid_p_1_a 
+
+ 
+ #ggsave("katydids_plot1_avg_axis.jpg")
+
+
+
+##katydid plot 2
+
+
+katydid_p_2_a <- ggplot(data = katydid_avg, aes(x = Species_full, y = Resp_average, colour = Species_full))   + GG2  + C2 + TM3 + Plt2 + Xlab2 +Ylab2 + FW2
+katydid_p_2_a
+
+ 
+ #ggsave("katydids_plot2_avg.jpg", width = W2, height = H2)
+
+```
+
+########################## 
+
+########################## 
+
+
+### Stats ###
+
+
+
+
+## RUNNING TESTS TO SEE WHETHER DIFFERENT BATS RESPOND TO SOUNDS DIFFERENTLY
+
+Should I do iterative selection with call type, to see how species
+respond to different calltypes? Should I see if calltype and playback
+should both be in the model? Does that make sense, if playback is
+nested in call type? \## Call type
+
+```{r}
+# Does playback predict response? Yes
+G_U_clmm_pl<- clmm(as.factor(Response) ~ Playback + (1| ID), data= g_u)
+summary(G_U_clmm_pl) 
+
+#with number as random effect (number has a bunch of weird values, at present though)
+G_U_clmm_pl1<- clmm(as.factor(Response) ~ Playback + (1| ID)+ (1|Number), data= g_u)
+summary(G_U_clmm_pl1) 
+
+#write.csv2(G_U_clmm_pl1, "G_U_clmm_pl1.csv") #doesn't work, but would be good to export these. Maybe by date?
+
+#rankedmodels_randomeffect<- rankModels(list( G_U_clmm_pl, G_U_clmm_pl1 ))
+#^doesn't work yet, mod 11.30.20
+
+# Does category predict response? YES
+G_U_clmm_CT<- clmm(as.factor(Response) ~ Call_type + (1| ID), data= g_u)
+summary(G_U_clmm_CT) 
+em_CT <-emmeans(G_U_clmm_CT, "Call_type")
+em_CT
+plot(em_CT)
+# ggsave("over_bat_response_call_type.jpg")
+G_U_clmm<- clmm(as.factor(Response) ~ Species*Playback + (1| Number), data= g_u)
+summary(G_U_clmm)
+```
+
+## Playback- AICC ranked model selection
+
+-   Add number as random effect
+
+```{r}
+
+g1_01<- clmm(as.factor(Response) ~ Species * Playback + (1|ID), data= g_u, Hess=TRUE, nAGQ=10) #full model
+g1_02<- clmm(as.factor(Response) ~ Species + Playback + (1|ID), data= g_u, Hess=TRUE, nAGQ=10)
+g1_03<- clmm(as.factor(Response) ~ Species + (1|ID), data= g_u, Hess=TRUE, nAGQ=10)
+g1_04<- clmm(as.factor(Response) ~ Playback + (1|ID), data= g_u, Hess=TRUE, nAGQ=10)
+g1_05<- clmm(as.factor(Response) ~ 1 + (1|ID), data= g_u, Hess=TRUE, nAGQ=10)
+
+
+rankModels(list(g1_01, g1_02, g1_03, g1_04, g1_05))
+rankedmodels_g1<-rankModels(list(g1_01, g1_02, g1_03, g1_04, g1_05))
+rankedmodels_g1
+
+#add column with formulas? 
+modelnames<- c("2- species + playback" , "1- species * playback", "3- species", "4- playback", "5- intercept only")
+rankedmodels_g1 <- cbind(modelnames, rankedmodels_g1)
+
+write.csv(rankedmodels_g1, file="ranked_models_speciesxplayback.csv")
+#so additive model is better than model with interaction...
+
+Anova_species_playback <- anova(g1_01, g1_02)
+Anova_species_playback 
+
+## So this analysis thinks that species predicts responses, and playback predicts responses, but different species don't respond differently to different playbacks (including all the species with more than 1 response). But the first model was just really hard to fit. May be that mostly bats responded to the sounds just as hthings to listen to, and since most of the bats didn't respond to sounds, then that was the dominant effect)
+# no "main effect" with these categorical variables... so maybe "add 1" strategy? to look at each factor seperately?
+
+# https://towardsdatascience.com/model-selection-101-using-r-c8437b5f9f99
+
+# (maybe remove variables with less than 2?)
+#1 pull out species with at least 1 land, and test them, to pull out species that we know are paying attention for food purposes. 
+
+#could also do an analysis with the bats that are most likely to just be listening: AJS, discolor. try to parse what just listening looks like vs what hunting looks like. 
+
+# also pull out a species and look at preferences
+
+```
+
+
+
+### TEST ACOUSTIC PREFERENCES: MULTICOLLINEARITY
+
+```{r}
+# Make models to test for Multicollinearity, choose variables that don't super covary
+g_u$pulses_call <- as.numeric(g_u$pulses_call)
+g_u$duty_cycle<- as.numeric(g_u$duty_cycle)
+g_u$sum_pulse_duration_callgroup <- as.numeric(g_u$sum_pulse_duration_callgroup)
+
+## pretty nuch every acoustic variable must be logged
+hist(g_u$amplitude)
+hist(log(g_u$amplitude))
+
+#  removed variables+ log(pulses_call)
+model <- glm(Response ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)   + log(duty_cycle) + log(file_time_with_sound) + amplitude , data= g_u)
+summary(model)
+alias(model)
+vif(model) 
+
+# with call types logged, these are not multicollinear @ > 5
+
+```
+
+```{r}
+#Testing overall acoustic preferences for all bats (following a guide from Hannah ter Hofstede for model selection, but this is pretty rough)
+
+#c_AP_1<- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)   + log(duty_cycle) + log(file_time_with_sound) + amplitude + (1|ID) , data= g_u)
+summary(c_AP_1)
+#6 predictor variables
+#CAP_1 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)   + log(duty_cycle) + log(file_time_with_sound) + amplitude + (1|ID) , data= g_u)
+
+#CAP_2 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)   + log(duty_cycle) + log(file_time_with_sound) +  (1|ID) , data= g_u)
+
+CAP_3 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)   + log(duty_cycle) + amplitude + (1|ID) , data= g_u)
+
+#CAP_4 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)   +  log(file_time_with_sound) + amplitude + (1|ID) , data= g_u)
+
+#CAP_5 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) +  log(duty_cycle) + log(file_time_with_sound) + amplitude + (1|ID) , data= g_u)
+
+#CAP_6 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(bandw)  + log(duty_cycle) + log(file_time_with_sound) + amplitude + (1|ID) , data= g_u)
+
+#CAP_7 <- clmm(as.factor(Response) ~   log(peak_freq) + log(bandw)   + log(duty_cycle) + log(file_time_with_sound) + amplitude + (1|ID) , data= g_u)
+
+#CAP_8 <- clmm(as.factor(Response) ~   log(bandw)   + log(duty_cycle) + log(file_time_with_sound) + amplitude + (1|ID) , data= g_u)
+#CAP_9<- clmm(as.factor(Response) ~   log(peak_freq)   + log(duty_cycle) + log(file_time_with_sound) + amplitude + (1|ID) , data= g_u)
+#CAP_10 <- clmm(as.factor(Response) ~   log(peak_freq) + log(bandw)  + log(file_time_with_sound) + amplitude + (1|ID) , data= g_u)
+CAP_11 <- clmm(as.factor(Response) ~   log(peak_freq) + log(bandw)   + log(duty_cycle) +  amplitude + (1|ID) , data= g_u)
+#CAP_12 <- clmm(as.factor(Response) ~   log(peak_freq) + log(bandw)   + log(duty_cycle) + log(file_time_with_sound) + (1|ID) , data= g_u)
+
+#CAP_13 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup)   + log(duty_cycle) + log(file_time_with_sound) + amplitude + (1|ID) , data= g_u)
+
+#CAP_14 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(bandw)    + log(file_time_with_sound) + amplitude + (1|ID) , data= g_u)
+CAP_15 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(bandw)   + log(duty_cycle) + amplitude + (1|ID) , data= g_u)
+#CAP_16 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(bandw)   + log(duty_cycle) + log(file_time_with_sound) + (1|ID) , data= g_u)
+CAP_17 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) +  log(file_time_with_sound) + amplitude + (1|ID) , data= g_u)
+CAP_18 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) +  log(duty_cycle)  + amplitude + (1|ID) , data= g_u)
+#CAP_19 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) +  log(duty_cycle) + log(file_time_with_sound) +  (1|ID) , data= g_u)
+CAP_20 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)  + amplitude + (1|ID) , data= g_u)
+#CAP_21 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)   + log(file_time_with_sound)  + (1|ID) , data= g_u)
+CAP_22 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)   + log(duty_cycle) + (1|ID) , data= g_u)
+CAP_23 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)  + (1|ID) , data= g_u) #first 3
+CAP_24 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) +  log(duty_cycle) +  (1|ID) , data= g_u)
+#CAP_25 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) +   log(file_time_with_sound) +  (1|ID) , data= g_u)
+CAP_26 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) +  amplitude + (1|ID) , data= g_u)
+CAP_27 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(bandw)   + log(duty_cycle)  + (1|ID) , data= g_u)
+#CAP_28 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(bandw)   +  log(file_time_with_sound) + (1|ID) , data= g_u)
+CAP_29 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(bandw)   + amplitude + (1|ID) , data= g_u)
+#CAP_30 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) +  log(duty_cycle) + log(file_time_with_sound) + (1|ID) , data= g_u)
+CAP_30 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) +  log(duty_cycle) + amplitude + (1|ID) , data= g_u)
+#CAP_31 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) +  log(file_time_with_sound) + amplitude + (1|ID) , data= g_u)
+CAP_32 <- clmm(as.factor(Response) ~  log(peak_freq) + log(bandw)   + log(duty_cycle) +  (1|ID) , data= g_u)
+#CAP_33 <- clmm(as.factor(Response) ~ log(peak_freq) + log(bandw)   + log(file_time_with_sound) + (1|ID) , data= g_u)
+CAP_34 <- clmm(as.factor(Response) ~  log(peak_freq) + log(bandw)   + amplitude + (1|ID) , data= g_u)
+CAP_35 <- clmm(as.factor(Response) ~ log(bandw)   + log(duty_cycle) + log(file_time_with_sound) +  (1|ID) , data= g_u)
+CAP_36 <- clmm(as.factor(Response) ~  log(bandw)   + log(duty_cycle) + amplitude + (1|ID) , data= g_u)
+CAP_37 <- clmm(as.factor(Response) ~  log(duty_cycle) + log(file_time_with_sound) + amplitude + (1|ID) , data= g_u)
+CAP_38 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + (1|ID) , data= g_u)
+CAP_39 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(bandw)   + (1|ID) , data= g_u)
+CAP_40 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) +  log(duty_cycle)  + (1|ID) , data= g_u)
+CAP_41 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(file_time_with_sound) +(1|ID) , data= g_u)
+CAP_42 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + amplitude + (1|ID) , data= g_u)
+CAP_43 <- clmm(as.factor(Response) ~ log(peak_freq) + log(bandw) + (1|ID) , data= g_u)
+CAP_44 <- clmm(as.factor(Response) ~ log(peak_freq)  + log(duty_cycle) +  (1|ID) , data= g_u)
+CAP_45 <- clmm(as.factor(Response) ~ log(peak_freq) + log(file_time_with_sound)  + (1|ID) , data= g_u)
+CAP_46 <- clmm(as.factor(Response) ~ log(peak_freq) + amplitude + (1|ID) , data= g_u)
+CAP_47 <- clmm(as.factor(Response) ~ log(bandw)  + log(duty_cycle)  + (1|ID) , data= g_u)
+CAP_48 <- clmm(as.factor(Response) ~  log(bandw) + log(file_time_with_sound) + (1|ID) , data= g_u)
+CAP_49 <- clmm(as.factor(Response) ~ log(bandw)  + amplitude + (1|ID) , data= g_u)
+CAP_50 <- clmm(as.factor(Response) ~ log(duty_cycle) + log(file_time_with_sound)  + (1|ID) , data= g_u)
+CAP_51 <- clmm(as.factor(Response) ~ log(duty_cycle) + amplitude + (1|ID) , data= g_u)
+CAP_52 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + (1|ID) , data= g_u)
+CAP_53 <- clmm(as.factor(Response) ~ log(peak_freq) + (1|ID) , data= g_u)
+CAP_54 <- clmm(as.factor(Response) ~ log(bandw)  + (1|ID) , data= g_u)
+CAP_55 <- clmm(as.factor(Response) ~  log(duty_cycle)+ (1|ID) , data= g_u)
+CAP_56 <- clmm(as.factor(Response) ~  log(file_time_with_sound) + (1|ID) , data= g_u)
+CAP_57 <- clmm(as.factor(Response) ~ amplitude + (1|ID) , data= g_u)
+
+
+ALL_Tbl <- rankModels( list(CAP_1,
+CAP_2	,
+CAP_3	,
+CAP_4	,
+CAP_5	,
+CAP_6	,
+CAP_7	,
+CAP_8	,
+CAP_9	,
+CAP_10	,
+CAP_11	,
+CAP_12	,
+CAP_13	,
+CAP_14	,
+CAP_15	,
+CAP_16	,
+CAP_17	,
+CAP_18	,
+CAP_19	,
+CAP_20	,
+CAP_21	,
+CAP_22	,
+CAP_23	,
+CAP_24	,
+CAP_25	,
+CAP_26	,
+CAP_27	,
+CAP_28	,
+CAP_29	,
+CAP_30	,
+CAP_31	,
+CAP_32	,
+CAP_33	,
+CAP_34	,
+CAP_35	,
+CAP_36	,
+CAP_37	,
+CAP_38	,
+CAP_39	,
+CAP_40	,
+CAP_41	,
+CAP_42	,
+CAP_43	,
+CAP_44	,
+CAP_45	,
+CAP_46	,
+CAP_47	,
+CAP_48	,
+CAP_49	,
+CAP_50	,
+CAP_51	,
+CAP_52	,
+CAP_53	,
+CAP_54	,
+CAP_55	,
+CAP_56	,
+CAP_57))	
+ALL_Tbl
+## 
+
+#There is a 71% chance that the full model is the best model, compared to 28.5% for the next best model. 
+
+```
+
+```{r}
+#what about without file time with sound? 5 factors
+
+CAP_1 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)   + log(duty_cycle) + amplitude + (1|ID) , data= g_u)
+
+
+CAP_2 <- clmm(as.factor(Response) ~   log(peak_freq) + log(bandw)   + log(duty_cycle) +  amplitude + (1|ID) , data= g_u)
+
+CAP_3 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(bandw)   + log(duty_cycle) + amplitude + (1|ID) , data= g_u)
+
+CAP_4 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) +  log(file_time_with_sound) + amplitude + (1|ID) , data= g_u)
+CAP_5 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) +  log(duty_cycle)  + amplitude + (1|ID) , data= g_u)
+CAP_6 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)  + amplitude + (1|ID) , data= g_u)
+CAP_7 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)   + log(duty_cycle) + (1|ID) , data= g_u)
+CAP_8 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)  + (1|ID) , data= g_u) #first 3
+CAP_9 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) +  log(duty_cycle) +  (1|ID) , data= g_u)
+CAP_10 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) +  amplitude + (1|ID) , data= g_u)
+CAP_11 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(bandw)   + log(duty_cycle)  + (1|ID) , data= g_u)
+CAP_12 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(bandw)   + amplitude + (1|ID) , data= g_u)
+CAP_13 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) +  log(duty_cycle) + amplitude + (1|ID) , data= g_u)
+
+CAP_14 <- clmm(as.factor(Response) ~  log(peak_freq) + log(bandw)   + log(duty_cycle) +  (1|ID) , data= g_u)
+CAP_15 <- clmm(as.factor(Response) ~  log(peak_freq) + log(bandw)   + amplitude + (1|ID) , data= g_u)
+CAP_16 <- clmm(as.factor(Response) ~  log(bandw)   + log(duty_cycle) + amplitude + (1|ID) , data= g_u)
+CAP_17 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + (1|ID) , data= g_u)
+CAP_18 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(bandw)   + (1|ID) , data= g_u)
+CAP_19 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) +  log(duty_cycle)  + (1|ID) , data= g_u)
+CAP_20 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + amplitude + (1|ID) , data= g_u)
+CAP_21 <- clmm(as.factor(Response) ~ log(peak_freq) + log(bandw) + (1|ID) , data= g_u)
+CAP_22 <- clmm(as.factor(Response) ~ log(peak_freq)  + log(duty_cycle) +  (1|ID) , data= g_u)
+CAP_23 <- clmm(as.factor(Response) ~ log(peak_freq) + amplitude + (1|ID) , data= g_u)
+CAP_24 <- clmm(as.factor(Response) ~ log(bandw)  + log(duty_cycle)  + (1|ID) , data= g_u)
+CAP_25 <- clmm(as.factor(Response) ~ log(bandw)  + amplitude + (1|ID) , data= g_u)
+CAP_26 <- clmm(as.factor(Response) ~ log(duty_cycle) + amplitude + (1|ID) , data= g_u)
+CAP_27 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + (1|ID) , data= g_u)
+CAP_28 <- clmm(as.factor(Response) ~ log(peak_freq) + (1|ID) , data= g_u)
+CAP_29 <- clmm(as.factor(Response) ~ log(bandw)  + (1|ID) , data= g_u)
+CAP_30 <- clmm(as.factor(Response) ~  log(duty_cycle)+ (1|ID) , data= g_u)
+CAP_31 <- clmm(as.factor(Response) ~ amplitude + (1|ID) , data= g_u)
+
+
+ALL_Tbl <- rankModels( list(CAP_1,
+CAP_2	,
+CAP_3	,
+CAP_4	,
+CAP_5	,
+CAP_6	,
+CAP_7	,
+CAP_8	,
+CAP_9	,
+CAP_10	,
+CAP_11	,
+CAP_12	,
+CAP_13	,
+CAP_14	,
+CAP_15	,
+CAP_16	,
+CAP_17	,
+CAP_18	,
+CAP_19	,
+CAP_20	,
+CAP_21	,
+CAP_22	,
+CAP_23	,
+CAP_24	,
+CAP_25	,
+CAP_26	,
+CAP_27	,
+CAP_28	,
+CAP_29	,
+CAP_30	,
+CAP_31))
+
+ALL_Tbl
+ anova(CAP_1, CAP_6)
+#
+
+## 
+
+
+
+```
+
+Likelihood ratio tests of cumulative link models:
+
+      formula:                                                                                                                      
+
+CAP_6 as.factor(Response) \~ log(sum_pulse_duration_callgroup) +
+log(peak_freq) + log(bandw) + amplitude + (1 \| ID)\
+CAP_1 as.factor(Response) \~ log(sum_pulse_duration_callgroup) +
+log(peak_freq) + log(bandw) + log(duty_cycle) + amplitude + (1 \| ID)
+link: threshold: CAP_6 logit flexible\
+CAP_1 logit flexible
+
+      no.par    AIC  logLik LR.stat df Pr(>Chisq)  
+
+CAP_6 10 2831.5 -1405.7\
+CAP_1 11 2827.6 -1402.8 5.8215 1 0.01583 \* --- Signif. codes: 0 '***'
+0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+WHAT ABOUT LOPHOSTOMA?
+
+```{r}
+
+#LOPHOSTOMA BEST MODEL?
+Loph_g_u<- subset(g_u, g_u$Species == "Loph_silv")
+head(Loph_g_u)
+
+model <- glm(Response ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)   + log(duty_cycle) +  amplitude , data= Loph_g_u)
+summary(model)
+alias(model)
+vif(model) 
+#All below 5, proceed (though close to...)
+LoS_1 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)   + log(duty_cycle) + amplitude + (1|ID) , data= Loph_g_u)
+
+
+LoS_2 <- clmm(as.factor(Response) ~   log(peak_freq) + log(bandw)   + log(duty_cycle) +  amplitude + (1|ID) , data= Loph_g_u)
+
+LoS_3 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(bandw)   + log(duty_cycle) + amplitude + (1|ID) , data= Loph_g_u)
+
+LoS_4 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) +  log(file_time_with_sound) + amplitude + (1|ID) , data= Loph_g_u)
+LoS_5 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) +  log(duty_cycle)  + amplitude + (1|ID) , data= Loph_g_u)
+LoS_6 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)  + amplitude + (1|ID) , data= Loph_g_u)
+LoS_7 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)   + log(duty_cycle) + (1|ID) , data= Loph_g_u)
+LoS_8 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + log(bandw)  + (1|ID) , data= Loph_g_u) #first 3
+LoS_9 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) +  log(duty_cycle) +  (1|ID) , data= Loph_g_u)
+LoS_10 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) +  amplitude + (1|ID) , data= Loph_g_u)
+LoS_11 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(bandw)   + log(duty_cycle)  + (1|ID) , data= Loph_g_u)
+LoS_12 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(bandw)   + amplitude + (1|ID) , data= Loph_g_u)
+LoS_13 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) +  log(duty_cycle) + amplitude + (1|ID) , data= Loph_g_u)
+
+LoS_14 <- clmm(as.factor(Response) ~  log(peak_freq) + log(bandw)   + log(duty_cycle) +  (1|ID) , data= Loph_g_u)
+LoS_15 <- clmm(as.factor(Response) ~  log(peak_freq) + log(bandw)   + amplitude + (1|ID) , data= Loph_g_u)
+LoS_16 <- clmm(as.factor(Response) ~  log(bandw)   + log(duty_cycle) + amplitude + (1|ID) , data= Loph_g_u)
+LoS_17 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(peak_freq) + (1|ID) , data= Loph_g_u)
+LoS_18 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + log(bandw)   + (1|ID) , data= Loph_g_u)
+LoS_19 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) +  log(duty_cycle)  + (1|ID) , data= Loph_g_u)
+LoS_20 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + amplitude + (1|ID) , data= Loph_g_u)
+LoS_21 <- clmm(as.factor(Response) ~ log(peak_freq) + log(bandw) + (1|ID) , data= Loph_g_u)
+LoS_22 <- clmm(as.factor(Response) ~ log(peak_freq)  + log(duty_cycle) +  (1|ID) , data= Loph_g_u)
+LoS_23 <- clmm(as.factor(Response) ~ log(peak_freq) + amplitude + (1|ID) , data= Loph_g_u)
+LoS_24 <- clmm(as.factor(Response) ~ log(bandw)  + log(duty_cycle)  + (1|ID) , data= Loph_g_u)
+LoS_25 <- clmm(as.factor(Response) ~ log(bandw)  + amplitude + (1|ID) , data= Loph_g_u)
+LoS_26 <- clmm(as.factor(Response) ~ log(duty_cycle) + amplitude + (1|ID) , data= Loph_g_u)
+LoS_27 <- clmm(as.factor(Response) ~ log(sum_pulse_duration_callgroup) + (1|ID) , data= Loph_g_u)
+LoS_28 <- clmm(as.factor(Response) ~ log(peak_freq) + (1|ID) , data= Loph_g_u)
+LoS_29 <- clmm(as.factor(Response) ~ log(bandw)  + (1|ID) , data= Loph_g_u)
+LoS_30 <- clmm(as.factor(Response) ~  log(duty_cycle)+ (1|ID) , data= Loph_g_u)
+LoS_31 <- clmm(as.factor(Response) ~ amplitude + (1|ID) , data= Loph_g_u)
+
+
+ALL_Tbl <- rankModels( list(LoS_1,
+LoS_2	,
+LoS_3	,
+LoS_4	,
+LoS_5	,
+LoS_6	,
+LoS_7	,
+LoS_8	,
+LoS_9	,
+LoS_10	,
+LoS_11	,
+LoS_12	,
+LoS_13	,
+LoS_14	,
+LoS_15	,
+LoS_16	,
+LoS_17	,
+LoS_18	,
+LoS_19	,
+LoS_20	,
+LoS_21	,
+LoS_22	,
+LoS_23	,
+LoS_24	,
+LoS_25	,
+LoS_26	,
+LoS_27	,
+LoS_28	,
+LoS_29	,
+LoS_30	,
+LoS_31))
+
+LoS_Tbl
+ anova(LoS_13, LoS_5)
+ # not different from next best model
+ 
+# LoS_1x <- clmm(as.factor(Response) ~ Call_type + log(sum_pulse_duration_callgroup) +  log(duty_cycle) + amplitude + (1|ID) , data= Loph_g_u, nAGQ = 10,  Hess=TRUE, control = clmm.control(maxIter = 200))
+anova(LoS_1x,LoS_13)
+#adding in category explains more variation than the acoustic variables
+
+#amplitude , duty_cycle, pulse duration
+
+###
+P_LS_pf <- ggplot(data = Loph_g_u, aes(x = log(sum_pulse_duration_callgroup), y = Response, colour = Species_full))
+
+P_LS_pf <- P_LS_pf+ geom_point()position = position_jitter(width = 0.5), size = 5)
+P_LS_pf<- P_LS_pf+ coord_cartesian(ylim = c(0, 5.25))
+#p_gu_LA <- p_gu_LA + scale_colour_manual(values = PL(n_colors))
+P_LS_pf<- P_LS_pf + TM2
+p_gu_LA <- p_gu_LA +  xlab("Acoustic stimuli")
+p_gu_LA <- p_gu_LA +  ylab("Response score") 
+
+
+
+
+summary(LoS_13)
+em_ALoS<-emmeans(C_LoS_13, "Species")
+em_ALoS
+cld_ALos<- multcomp::cld(em_ALoS, letters=LETTERS)
+cld_ALos
+
+
+C_LoS_cat <- clmm(as.factor(Response) ~ Call_type + (1|ID) , Loph_g_u)
+summary(C_LoS_cat)
+emCat_LoS<- emmeans(C_LoS_cat, "Call_type" )
+plot(emCat_LoS)
+```
+
+```{r}
+as.numeric(g_u$duty_cycle)
+colnames(g_u)
+G_U_acoustic<- clmm(as.factor(Response) ~ sum_pulse_duration_callgroup + peak_freq + bandw + pulses_call  + duty_cycle + file_time_with_sound + amplitude + (1| Number), data= g_u)
+summary(G_U_acoustic)
+
+```
+
+Do different bats have different responses to white noise?
+
+```{r}
+#White #
+
+G_U_clmm_white<- clmm(as.factor(Response) ~ Species + (1| Number), data= g_u[  g_u$Playback==c("White noise"), ])
+
+summary(G_U_clmm_white)
+```
+
+Do different bats have different responses to katydids?
+
+BY BAT SPECIES
+
+```{r}
+#katydid #data
+
+G_U_clmm_k_pl<- clmm(as.factor(Response) ~ Species + (1| Number), data= katydid)
+summary(G_U_clmm_k_pl)
+
+K_pl<-emmeans(G_U_clmm_k_pl, "Species")
+K_pl
+K_pl_cld<- multcomp::cld(K_pl, letters=LETTERS)
+K_pl_cld
+plot(K_pl_cld) #overall responses to katydids
+#ggsave("emmeans_katydid_pl.jpg")
+
+## BY KATYDID
+katydid1 <- katydid
+katydid1$Playback <- as.character(katydid1$Playback)
+
+G_U_clmm_k_pl<- clmm(as.factor(Response) ~ as.character(Playback) + (1| Number), data= katydid1)
+summary(G_U_clmm_k_pl)
+
+K_pl<-emmeans(G_U_clmm_k_pl, "Playback")
+K_pl
+K_pl_cld<- multcomp::cld(K_pl, letters=LETTERS)
+K_pl_cld
+plot(K_pl_cld) #overall responses to katydids
+#ggsave("emmeans_K_pl.jpg")
+
+```
+
+#####SOUND#######
