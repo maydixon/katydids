@@ -2253,7 +2253,6 @@ ALL_Tbl
 ## 
 
 
-
 ```
 
 Likelihood ratio tests of cumulative link models:
