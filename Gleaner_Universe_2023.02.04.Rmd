@@ -120,6 +120,68 @@ library(multcompView)
 library(broom.mixed) 
 library(forcats)
 library(plotly)
+library(boot)
+library(egg)
+```
+Bootstrapping functions
+```{r functions}
+# functions for bootstrapping 95% confidence intervals around the mean
+
+# get mean and 95% CI of values x via bootstrapping
+boot_ci <- function(x, perms=5000, bca=F) {
+  get_mean <- function(x, d) {
+    return(mean(x[d]))
+  } 
+  x <- as.vector(na.omit(x))
+  mean <- mean(x)
+  if(bca){
+    boot <- boot.ci(boot(data=x, 
+                         statistic=get_mean, 
+                         R=perms, 
+                         parallel = "multicore", 
+                         ncpus = 4), 
+                    type="bca")
+    low <- boot$bca[1,4]
+    high <- boot$bca[1,5] 
+  }else{
+    boot <- boot.ci(boot(data=x, 
+                         statistic=get_mean, 
+                         R=perms, 
+                         parallel = "multicore", 
+                         ncpus = 4), 
+                    type="perc")
+    low <- boot$perc[1,4]
+    high <- boot$perc[1,5] 
+  }
+  c(low=low,mean=mean,high=high, N=round(length(x)))
+}
+
+
+# get mean and 95% CI via bootstrapping of values y within grouping variable x
+boot_ci2 <- function(d=d, y=d$y, x=d$x, perms=5000, bca=F){
+  df <- data.frame(effect=unique(x))
+  df$low <- NA
+  df$mean <- NA
+  df$high <- NA
+  df$n.obs <- NA
+  for (i in 1:nrow(df)) {
+    ys <- y[which(x==df$effect[i])] #pulls out all the e.g.location prefs
+    if (length(ys)>1 & var(ys)>0 ){
+      b <- boot_ci(y[which(x==df$effect[i])], perms=perms, bca=bca) #resamples with replacement the mean and ci for e.g. AJs pref for location, gives back the low mean and high
+      df$low[i] <- b[1]
+      df$mean[i] <- b[2]
+      df$high[i] <- b[3]
+      df$n.obs[i] <- b[4]
+    }else{
+      df$low[i] <- min(ys)
+      df$mean[i] <- mean(ys)
+      df$high[i] <- max(ys)
+      df$n.obs[i] <- length(ys)
+    }
+  }
+  df
+}
+# y = response score, x= response within group (e.g. bat spp)
 ```
 
 
@@ -305,6 +367,11 @@ str(g_u)
 # +         "text"))
 
 
+check_1 <- g_u %>%
+      group_by(Playback) %>%
+      summarize(n=n())
+##delete
+
 ```
 
 ### Guide to Columns: 
@@ -344,6 +411,13 @@ colnames(g_u)
 
 sapply(g_u, unique) # applies "unique" function to all the columns in the dataset, gives all the unique values for each
 
+
+#Fix mis-entered "D. gigliotosi " values: 
+g_u <- g_u %>%
+      mutate(Playback = replace(Playback, Playback =="D. gigliotosi ", "D. gigliotosi")) %>%
+      mutate(Playback = replace(Playback, Playback =="Anaxipha sp. ", "Anaxipha sp."))
+
+
 #sex has M, F, "M?" and "NA"
 g_u %>% select(Sex) %>% unique() 
 
@@ -380,7 +454,7 @@ g_u %>% filter(!Set %in% c(1:4))
 
 g_u<- g_u %>% mutate(Call_type = if_else(Playback %in% c("A. spatulata","C. wheeleri","D. gigliotosi" ,"T. subfalcata","V. zederstedi"), "Katydid", 
       if_else(Playback %in% c( "Acla sp.","Aclodes sp.",  "Anaxipha sp."), "Cricket", 
-      if_else(Playback %in% c("D. diastema", "D. ebraccatus", "D. ebraccatus",  "H. fleishmanni", "P. pustulosus" ,"S. sila"), "Frog", 
+      if_else(Playback %in% c("D. diastema", "D. ebraccatus", "H. fleishmanni", "P. pustulosus" ,"S. sila"), "Frog", 
       if_else(Playback %in% c("Q. gigas", "Z. smaragdina"), "Cicada", 
       if_else(Playback %in% c( "H. frenatus","T. rapicauda" ), "Gecko", 
       if_else(Playback %in% c("Beetle flight", "Frog hopping" , "Mouse rustles", "Moth sounds" ),"Movement cue", 
@@ -389,11 +463,11 @@ g_u<- g_u %>% mutate(Call_type = if_else(Playback %in% c("A. spatulata","C. whee
       ))))))))
 
 
-
 #order factor
 g_u$Call_type<- factor(g_u$Call_type, levels = c( "Cricket" , "Katydid", "Cicada" , "Frog"  ,"Gecko", "Movement cue",    "White noise" ), ordered = TRUE )
 
 unique(g_u$Call_type)
+
 
 ```
 
@@ -420,9 +494,28 @@ g_u <- subset(g_u, g_u$Playback!="NA")
 #g_u <- subset(g_u, g_u$Species!="Micr_schm" & g_u$Species!="Glyp_davi") 
 
 # use if no moth sounds
-g_u$Playback<- factor(g_u$Playback, levels = c( "Acla sp."       ,     "Aclodes sp."   ,  "Anaxipha sp.", "A. spatulata" , "T. subfalcata", "V. zederstedi"  ,  "C. wheeleri" ,  "D. gigliotosi"  , "Q. gigas" ,  "Z. smaragdina"   ,
-        "D. diastema" , "H. fleishmanni", "D. ebraccatus" ,  "S. sila"     ,      "P. pustulosus" ,  "H. frenatus" , "T. rapicauda"  ,
-    "Beetle flight",  "Frog hopping"  , "Mouse rustles", "White noise"), ordered = TRUE )
+g_u$Playback<- factor(g_u$Playback, levels = c( "Acla sp.", #crickets
+                                                "Aclodes sp." ,
+                                                "Anaxipha sp.",
+                                                "A. spatulata" , #katydids
+                                                "T. subfalcata",
+                                                "V. zederstedi" ,
+                                                "C. wheeleri" ,
+                                                "D. gigliotosi"  ,
+                                                "Q. gigas" ,    #cicadas
+                                                "Z. smaragdina"  ,
+                                                "D. diastema" ,   #frogs
+                                                "H. fleishmanni",
+                                                "D. ebraccatus" ,
+                                                "S. sila"     ,
+                                                "P. pustulosus" ,
+                                                "H. frenatus" ,   #geckos
+                                                "T. rapicauda"  ,
+                                                "Beetle flight",   # movement sounds
+                                                "Frog hopping"  ,
+                                                "Mouse rustles",
+                                                "White noise"),   #white noise
+                      ordered = TRUE )
 
 #Use if moth sounds are included
 # g_u$Playback<- factor(g_u$Playback, levels = c( "Acla sp."       ,     "Aclodes sp."   ,  "Anaxipha sp.", "A. spatulata" , "T. subfalcata", "V. zederstedi"  ,  "C. wheeleri" ,  "D. gigliotosi"  , "Q. gigas" ,  "Z. smaragdina"   ,
@@ -690,7 +783,6 @@ unique(land_sp$Playback)
 plot_byplayback <- function(RESPONSE= "5"){
   
    plot_playback <-   g_u %>%
-       filter(Call_type!= "NA")  %>%
        group_by(Call_type) %>%
        filter(Response >= RESPONSE) %>% 
        ggplot(aes( x= Playback)) +
@@ -712,7 +804,6 @@ plot_byplayback(RESPONSE = "5")
  plot_bytype <- function(RESPONSE = "5"){
   plot_type <- g_u %>%
        group_by(Call_type) %>%
-        filter(Call_type!= "NA")  %>%
        filter(Response >= RESPONSE) %>%
        ggplot(aes( x= Call_type)) +
             geom_bar( aes( fill = Playback)) +
@@ -807,28 +898,41 @@ colored by which bat species landed:
 p_avg_batspecies<- 
       g_u %>%
       mutate(Species_short = fct_reorder(Species_short, Response, .fun='mean')) %>% #reorders the columns from high to low mean response
-      ggplot( aes(x=reorder(Species_short, -Response), y = Response), color = "white") + #the "-" orders it high to low color = "black" or "white" for dark or light mode
-      geom_violin() +
+      ggplot( aes(x=reorder(Species_short, -Response), y = Response), color = "black") + #the "-" orders it high to low color = "black" or "white" for dark or light mode
+     # geom_violin() +
+      geom_dotplot( aes(color = Call_type,
+                        fill = Call_type ) ,
+                   binaxis = "y",
+                   stackdir = "center",
+                   method = "histodot" , # fixed bin width dotdensity is default
+                   binwidth =1/40, #max bin width - proportion of range of data
+                   alpha = .7,
+                   stackratio = 0.8, # doesn't  change dot size #.5 good for together plot
+                    dotsize = 6 ,  #(previously not specified) #2 good for collective plot 12 good for single spp. plots
+                   # width = .2
+                   # right = TRUE
+                  ) +
       # geom_point(size = 0.5, position = position_jitter(width = .3, height = 0), color = "lightgreen", alpha = 0.5) +
       coord_cartesian(ylim = c(0, 5)) + #standardize y axis
+      
     
-    # theme(panel.grid.major = element_blank(), panel.grid.minor =  element_blank(),
-    #    panel.background = element_rect(fill = 'white'),
-    #    axis.line = element_line(colour = "black"),
-    #    text = element_text(color = "black"), 
-    #    plot.background= element_rect(fill = 'white'),
-    # 
-    #    legend.position = "none", axis.text.x = element_text(angle = 63, hjust=1, face = "italic"), axis.text =                   element_text(size = 16, color = "black"), axis.title = element_text(size = 16),  )  + #gets rid of                    background
-      dark_theme_noline +
+    theme(panel.grid.major = element_blank(), panel.grid.minor =  element_blank(),
+       panel.background = element_rect(fill = 'white'),
+       axis.line = element_line(colour = "black"),
+       text = element_text(color = "black"),
+       plot.background= element_rect(fill = 'white'),
+
+       legend.position = "none", axis.text.x = element_text(angle = 63, hjust=1, face = "italic"), axis.text =                   element_text(size = 16, color = "black"), axis.title = element_text(size = 16),  )  + #gets rid of                    background
+     # dark_theme_noline +
 
  xlab("Bat species") +
 ylab("Response scores") +
 ggtitle("Mean bat responses to all sounds")
       
 # color points by if the bat landed
-p_avg_batspecies_land <-  p_avg_batspecies +
-        stat_summary(fun=mean, geom="point", shape=23, size=3, aes(fill= g_u$Response_Land))  
 
+p_avg_batspecies_land <-  p_avg_batspecies +
+        stat_summary(fun=mean, geom="point", shape=4, size=1, aes(color= as.factor(Response_Land)))  
 p_avg_batspecies_land
 
 #ggsave("Mean bat species responses to sounds by species_dark.jpg", width = 10, height = 7)
@@ -852,9 +956,9 @@ p_avg_batspecies_land
 
 #Set up the plots  (alone it looks crazy but it is necessary to color the plots below by call_type
 p_avg_batspecies_calltype <-  p_avg_batspecies + 
-      stat_summary(fun=mean, geom="point", shape=23, size=3, aes(fill= Call_type)) + 
-      colScale_CallCat  #custom scale_fill_manual set outside
-
+      stat_summary(fun=mean, geom="point", shape=4, size=2, aes(fill= Call_type)) + 
+      colScale_CallCat +  #custom scale_fill_manual set outside
+      colScale_color_CallCat
       
 #Plot each, color is set by colScale_CallCat and previous plot
 Playback_plots = g_u %>%
@@ -862,8 +966,12 @@ Playback_plots = g_u %>%
     do(Playback_plots = p_avg_batspecies_calltype %+% . + #do applies fn to current group. here it applies  plot to each Playback
              #facet_wrap(~Playback) + #can use if you want facet labels instead of/with ggtitle
               ggtitle(paste("Bat responses to", unique(.$Playback))) + #makes title current group
-             ggsave(filename = paste("bat_mean_responses_to_",unique(.$Playback),"_dark.pdf", sep = "")) 
+             ggsave(filename = paste("bat_mean_responses_to_",unique(.$Playback),".pdf", sep = ""),
+                    width = 177,
+                    height = 100,
+                    units = "mm" ) #85, 129, or 177 mm (1-3 columns) 
        ) 
+        
 Playback_plots$Playback_plots
 
 
@@ -910,9 +1018,228 @@ p_avg_preyspecies <-
     ggtitle("Mean bat responses to sounds")
 ```
 
+test
+```{r}
+
+#### test code###
+ test_fn <-function(ranked= TRUE) {
+test <-      g_u %>%
+                filter(Call_type !="NA") %>%
+                filter(Species == "Trin_nice")  %>%
+                 filter(Call_type !="NA") 
+
+plot <-   test 
+
+#reorders the x-axis from high to low mean response if response = TRUE
+ if(ranked){
+    plot <-   plot %>% mutate(Playback = fct_reorder(Playback, Response, .fun='mean')) %>%
+          ggplot( aes(x = reorder(Playback, -Response), y = Response))  
+    }else{
+                plot <-   plot %>%
+                      ggplot(aes(y=Response, x = Playback))
+          }
+
+    plot <- plot +
+          geom_point() +
+          theme(panel.grid.major = element_blank(),
+                panel.grid.minor =  element_blank(),
+                  panel.background = element_rect(fill = 'white'),
+                  axis.line = element_line(colour = "black"),
+                  text = element_text(color = "black", size = 10),
+                  plot.title = element_text(face = "italic", size = 11),
+                  legend.position = "right",
+                  axis.title.x = element_blank(),
+                  axis.text.x = element_text(angle = 63, hjust=1, face = "italic"),
+                  axis.text = element_text( color = "black", size = 10), 
+                  #axis.title = element_text(size = 16),  
+                  )  
+     
+
+print(test)
+print(plot)
+
+
+} 
+      test_fn(ranked= TRUE)         
+#############
+```
+
+#bootstrapped means
+```{r}
+
+#Y= response, X= playback, within bat spp. boot_ci()
+
+# store dataframes and plots in lists to be able to make a multiplot or grid object- see how plots look together 
+# remove all the legends
+#try making a multiplot situation (ggarrange from egg package, ?align_plots from the cowplot package?)
+#make a version where X isn't reordered every time, so just one X on bottom,
+#
+
+#response score- 3 has so few data points- doesn't taper with more- combine 3 and 2?
+
+#clean this up (get rid of excess lists and whatnot)
+
+
+
+
+
+#pull unique species names
+Spp <- unique(g_u$Species)
+
+#initialize lists for plots and boot output
+
+
+####fixes#####
+# pull out ranked from function, test if function works on its own x
+#try adding in lists, internally x
+#check what output of mutate is
+# maybe pull out x and y? response and playback? to make function more universal?
+##############
+
+#make plots and bootstrapped 95% cis for each bat
+
+plot_bats <- function(d=d, ranked= TRUE) {
+      
+      #initialize lists for plots and boot output
+      myplots <- list()
+      bootsummary <- list()
+      
+        #loop through bat spp
+        for (i in 1:length(Spp)) {
+      
+  #pull out one bat species at a time          
+  data <-      d %>%
+                filter(Call_type !="NA") %>%
+                filter(Species ==Spp[i]) 
+      
+           #get bootstrapped means and 95% confidence intervals for the response to each playback
+           Boot_sums <- boot_ci2(d = data, y = data$Response, x = data$Playback, perms = 5000, bca = F) %>%
+                 rename(Playback = effect)
+           
+      #store bootsums in list     
+          #  bootsummary[[i]] <- Boot_sums
+      
+      #make dotplot for bats       
+     plot <-     data %>%
+                 filter(Call_type !="NA") 
+  
+        
+#reorders the x-axis from high to low mean response if ranked = TRUE
+ if(ranked){
+    plot <-   plot %>% mutate(Playback = fct_reorder(Playback, Response, .fun='mean')) %>%
+          ggplot( aes(x = reorder(Playback, -Response), y = Response))  
+    }else{
+                plot <-   plot %>%
+                      ggplot(aes(y=Response, x = Playback))
+    }
+     
+     plot <- plot +
+           geom_dotplot( aes(color = Call_type,
+                              fill = Call_type ) ,
+                         binaxis = "y",
+                         stackdir = "center",
+                         method = "histodot" , # fixed bin width dotdensity is default
+                         binwidth =1/40, #max bin width - proportion of range of data
+                         alpha = .7,
+                         stackratio = 0.9, # doesn't  change dot size #.5 good for together plot
+                          dotsize = 8 ,  #(previously not specified) #2 good for collective plot 12 good for single spp. plots
+                         # width = .2
+                         # right = TRUE
+                        ) +
+                        colScale_CallCat + # fill palette
+                        colScale_color_CallCat + #color palette
+              
+            coord_cartesian(ylim = c(0, 5)) + #standardize y axis
+          
+          theme(panel.grid.major = element_blank(),
+                panel.grid.minor =  element_blank(),
+                  panel.background = element_rect(fill = 'white'),
+                  axis.line = element_line(colour = "black"),
+                  text = element_text(color = "black", size = 10),
+                  plot.title = element_text(face = "italic", size = 11),
+                  legend.position = "right",
+                  axis.title.x = element_blank(),
+                  axis.text.x = element_text(angle = 63, hjust=1, face = "italic"),
+                  axis.text = element_text( color = "black", size = 10), 
+                  #axis.title = element_text(size = 16),  
+                  )  + 
+          #dark_theme_noline +
+          xlab("Playback") +
+          ylab("Response scores") +
+          ggtitle(paste(unique(data$Species_full)," (n = ", length(unique(data$ID)), ")", sep ="") )   #makes title current group, n is number of bats      
+        
+           if(length(unique(data$ID)) >=1){
+                 plot = plot + geom_point(data = Boot_sums,
+                                          aes( x= Playback,
+                                               y = mean),
+                                          color = "black",
+                                          shape = 4,
+                                          size = 1 )
+           }
+           
+      #if more than n individuals, add bootstrapped 95% CI's to plot
+          if(length(unique(data$ID)) >=7){
+                plot = plot + geom_errorbar( data = Boot_sums,
+                                aes( x=Playback,
+                                     ymin = low,
+                                     ymax =high,
+                                     y = NULL ),
+                                color = "black",
+                                width=.2,
+                                size=.25)
+          }
+          
+      # #make pdfs of plots (85, 129, or 177 mm width to fit in 1-3 columns dimensions)            
+                 plot = plot +   ggsave(filename = paste(ifelse(ranked,"", "unranked"), unique(data$Species_full), "responses_to_playbacks", ".jpg", sep = ""), width = 177, height = 55, units = "mm" )
+                 
+      #add plot to list           
+      myplots[[i]] <- plot
+      
+      plot
+      print(plot)
+     # print(Boot_sums)
+      }
+}
+
+plot_bats(d = g_u, ranked = FALSE)
+#have to fix this
+
+myplots
+
+names(myplots) <- unique(g_u$Species)
+names(bootsummary) <- unique(g_u$Species)
+ggpubr::ggarrange(plotlist = myplots[1:8], ncol = 1, common.legend = TRUE)
+align_plots(plotlist = myplots[1:8], align = "v" )
+myplots$Trin_nice
+ggsave("test_plot_allbats_long.jpg", width = 177, units = "mm", height = 800)
+# library(ggpubr)
+# library(egg)
+# library(cowplot)
+
+
+
+
+
+```
+
+
 dot plot attempt
 ````{r dot plot attempt }
 ############### dot plot attempt ##############
+### Right now the error bar thing doesn't work. I think I need to give up the "do" strategy and use a for loop or a function or apply to make the summary data by group and the plots at the same time.  
+#make the bat species a list.
+#subset data successively by each item in list
+#make summary data from subsetted data, then return plot, named df with summary data. 
+
+
+
+means <- g_u %>% 
+      mutate(effect= paste(Species_short, Playback, sep="_")) %>% #this to make 1 line for each subset
+      boot_ci2(d = ., y = .$Response, x = .$effect, perms = 5000, bca = F) %>%
+      separate(effect, into=c('Species_short', 'Playback'), sep="_", remove=F) 
+
+
+
 p_avg_preyspecies <- 
       g_u %>%
       filter(Call_type !="NA") %>%
@@ -932,8 +1259,9 @@ p_avg_preyspecies <-
                   ) +
       colScale_CallCat + # palette
       colScale_color_CallCat +
+       geom_point(data = Boot_sums, aes( x= Playback, y = mean, color = "black"), shape = 4, size =1 ) + 
+         #  geom_errorbar( data = Boot_sums, aes( x= Playback, ymin = low, ymax = high, color = "black"), width=.1, size=1) +
       coord_cartesian(ylim = c(0, 5)) + #standardize y axis
-    
     theme(panel.grid.major = element_blank(), panel.grid.minor =  element_blank(),
        panel.background = element_rect(fill = 'white'),
        axis.line = element_line(colour = "black"),
@@ -962,18 +1290,22 @@ ggsave("aa_test_dotplot.jpg", width = 177, height = 50, units = "mm" )
 #ggsave("Mean responses to sounds- gray equals any bat landed_dark.pdf")
 
 
+##### RETURN HERE######
+### Right now the error bar thing doesn't work. I think I need to give up the "do" strategy and use a for loop or a function or apply to make the summary data by group and the plots at the same time.  make the bat species a list. subset data successively by each item in list. make summary data from subsetted data, then return plot, named df with summary data. 
+
+
 
 
 Bat_plots = g_u %>%
-    group_by(Species_full) %>%
-    do(Bat_plots = p_avg_preyspecies %+% . + #do applies fn to current group. here it applies  plot to each Playback
+    group_by(Species_short) %>%
+    do(Bat_plots = p_avg_preyspecies %+% . + #do applies fn to current group. here it applies  plot to each bat species
              #facet_wrap(~Species_full) + #can use if you want facet labels instead of labels with ggtitle
       stat_summary(fun=mean, geom="point", shape = 4, size = 1 ) +
-      theme(legend.position = "none",
+      geom_errorbar(aes(data = subset(means, Species_short== .), ymin=low, ymax=high, width=.1), size=1)+      
+       theme(legend.position = "none",
             plot.title = element_text(face = "italic", size = 11),
             text = element_text(size=10),
-            axis.title.x = element_blank()) + #take out for 
-            
+            axis.title.x = element_blank()) + #take out for            
       ggtitle(paste(unique(.$Species_full)," (n = ", length(unique(.$ID)), ")", sep ="") ) + #makes title current group, n is number of bats          
              ggsave(filename = paste(unique(.$Species_full),"responses_to_playbacks", ".jpg", sep = ""), width = 177, height = 55, units = "mm" ) #85, 129, or 177 mm (1-3 columns)  #height = ,
        ) 
