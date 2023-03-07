@@ -1018,53 +1018,7 @@ p_avg_preyspecies <-
     ggtitle("Mean bat responses to sounds")
 ```
 
-test
-```{r}
-
-#### test code###
- test_fn <-function(ranked= TRUE) {
-test <-      g_u %>%
-                filter(Call_type !="NA") %>%
-                filter(Species == "Trin_nice")  %>%
-                 filter(Call_type !="NA") 
-
-plot <-   test 
-
-#reorders the x-axis from high to low mean response if response = TRUE
- if(ranked){
-    plot <-   plot %>% mutate(Playback = fct_reorder(Playback, Response, .fun='mean')) %>%
-          ggplot( aes(x = reorder(Playback, -Response), y = Response))  
-    }else{
-                plot <-   plot %>%
-                      ggplot(aes(y=Response, x = Playback))
-          }
-
-    plot <- plot +
-          geom_point() +
-          theme(panel.grid.major = element_blank(),
-                panel.grid.minor =  element_blank(),
-                  panel.background = element_rect(fill = 'white'),
-                  axis.line = element_line(colour = "black"),
-                  text = element_text(color = "black", size = 10),
-                  plot.title = element_text(face = "italic", size = 11),
-                  legend.position = "right",
-                  axis.title.x = element_blank(),
-                  axis.text.x = element_text(angle = 63, hjust=1, face = "italic"),
-                  axis.text = element_text( color = "black", size = 10), 
-                  #axis.title = element_text(size = 16),  
-                  )  
-     
-
-print(test)
-print(plot)
-
-
-} 
-      test_fn(ranked= TRUE)         
-#############
-```
-
-#bootstrapped means
+#bootstrapped means -  one way to make individual plots
 ```{r}
 
 #Y= response, X= playback, within bat spp. boot_ci()
@@ -1110,11 +1064,16 @@ plot_bats <- function(d=d, ranked= TRUE) {
   #pull out one bat species at a time          
   data <-      d %>%
                 filter(Call_type !="NA") %>%
-                filter(Species ==Spp[i]) 
-      
+                filter(Species ==Spp[i])
+   # # of bats in group 
+   n <- length(unique(data$ID))
+   
            #get bootstrapped means and 95% confidence intervals for the response to each playback
            Boot_sums <- boot_ci2(d = data, y = data$Response, x = data$Playback, perms = 5000, bca = F) %>%
                  rename(Playback = effect)
+
+           
+          
            
       #store bootsums in list     
           #  bootsummary[[i]] <- Boot_sums
@@ -1195,20 +1154,25 @@ plot_bats <- function(d=d, ranked= TRUE) {
       #add plot to list           
       myplots[[i]] <- plot
       
-      plot
-      print(plot)
+    
+      #print(plot)
      # print(Boot_sums)
-      }
+        }
+myplots   
 }
 
 plot_bats(d = g_u, ranked = FALSE)
-#have to fix this
 
-myplots
+unranked_batplots <- plot_bats(d = g_u, ranked = FALSE)
+unranked_batplots
+
+ranked_batplots <- plot_bats(d = g_u, ranked = TRUE)
+ranked_batplots
+
 
 names(myplots) <- unique(g_u$Species)
 names(bootsummary) <- unique(g_u$Species)
-ggpubr::ggarrange(plotlist = myplots[1:8], ncol = 1, common.legend = TRUE)
+ggpubr::ggarrange(plotlist = unranked_batplots[1:8], ncol = 1, common.legend = TRUE)
 align_plots(plotlist = myplots[1:8], align = "v" )
 myplots$Trin_nice
 ggsave("test_plot_allbats_long.jpg", width = 177, units = "mm", height = 800)
@@ -1221,6 +1185,239 @@ ggsave("test_plot_allbats_long.jpg", width = 177, units = "mm", height = 800)
 
 
 ```
+
+bootstrapped means and CIs for playback for each bat spp (for faceted plots)
+```{r}
+ # end goal: bootsums for all bats in all playbacks
+#but blanks for n<7 in high and low columns
+#put blanks in n<2 for mean column
+
+# n per species
+n <- g_u %>% group_by(Species_full) %>% summarize(n = length(unique(ID)))
+
+#bootstrap playback values within each bat spp
+Boot_sums <-      g_u %>%
+      filter(Call_type !="NA") %>%
+      mutate(effect= paste(Species_full, Playback, sep="_")) %>%
+
+ boot_ci2(d = ., y = .$Response, x = .$effect, perms = 5000, bca = F) %>%     
+      mutate(Species_Playback = effect) %>% #keep combined column in new name
+            separate(effect, into=c('Species_full', 'Playback'), sep="_", remove=F) #re separate combined column
+
+#add n spp
+Boot_sums <- left_join(Boot_sums, n) # n per spp. 
+
+#minimum values for plotting (could also do by bat, not observations per playback)
+Boot_sums <- Boot_sums %>%
+      mutate(low = ifelse(n.obs>=7, low,NA )) %>% #min value for plotting 95% bats
+      mutate(high = ifelse(n.obs>=7, high, NA )) %>%
+      mutate(mean = ifelse(n.obs>=2, mean, NA )) #min value for plotting boot means
+      
+
+
+Boot_sums
+
+                    
+                       
+```
+
+
+DELETE ME
+```{r}
+#test
+
+
+Species_levels <- levels(fct_reorder( g_u$Species_full, -g_u$Response, .fun='mean'))
+mutate(Species_full = fct_reorder( Species_full, -Response, .fun='mean'))
+
+mutate(Species_full = factor( Species_full, levels = Species_levels))
+
+```
+
+Faceted bat plots 
+```{r}
+ #code for faceted plots 
+
+
+plot_bats <- function(d=d, ranked= FALSE) {
+      
+    
+Species_levels <- levels(fct_reorder( d$Species_full, -d$Response, .fun='mean'))
+      
+   #return here: trying to make this refer to the current facet group
+  #appender <- function(string, suffix) paste0(string, suffix)
+  # appender <- function(string) paste0(string, distinct(subset(Boot_sums, Boot_sums$Species_full == string), n))
+# subset(Boot_sums, Boot_sums$Species_full == string)
+  #how to return first value of each group? 
+#p + facet_wrap(~am, labeller = as_labeller(appender)) 
+#label facets
+ lev <- n$Species_full
+lab <-      paste(n$Species_full, " (n = ", n$n , ")", sep = ""   )
+names(lab) <- lev
+
+      #make dotplot for bats       
+         d %>%
+           filter(Call_type !="NA") %>%
+           mutate(Species_full = factor( Species_full, levels = Species_levels)) -> d
+    
+#Why don't these reorder facets? infuriating
+     d$Species_full <- fct_reorder( d$Species_full, -d$Response, .fun='mean')
+
+     
+     #mutate(Species_full = fct_reorder( Species_full, -Response, .fun='mean'))
+        #mpg$class2 <- reorder(mpg$class, mpg$displ)
+
+               
+                  # mutate(Species_full = factor(Species_full, levels = levels(fct_reorder( Species_full, -Response, .fun='mean')))
+                  
+#reorders the x-axis from high to low mean response if ranked = TRUE
+ if(ranked){
+    plot <-   
+          d %>%
+           mutate(Playback = fct_reorder(Playback, Response, .fun='mean')) %>%
+          ggplot( aes(x = reorder(Playback, -Response), y = Response))  
+    }else{
+                plot <-   d %>%
+                      ggplot(aes(y=Response, x = Playback))
+    }
+     
+     plot <- plot +
+           facet_wrap(~factor(Species_full,
+                              levels = Species_levels), #order facets by mean response
+                      #facets = ~Species_full,
+                      ncol = 1,
+                      #labeller = as_labeller(appender),
+                      #labeller = as_labeller(lev),
+                      scales = ifelse(ranked, "free_x", "fixed")) +
+           geom_dotplot( aes(color = Call_type,
+                              fill = Call_type ) ,
+                         binaxis = "y",
+                         stackdir = "center",
+                         method = "histodot" , # fixed bin width dotdensity is default
+                         binwidth =1/40, #max bin width - proportion of range of data
+                         alpha = .7,
+                         stackratio = 0.9, # doesn't  change dot size #.5 good for together plot
+                          dotsize = 8 ,  #(previously not specified) #2 good for collective plot 12 good for single spp. plots
+                         # width = .2
+                         # right = TRUE
+                        ) +
+                        colScale_CallCat + # fill palette
+                        colScale_color_CallCat + #color palette
+              
+            coord_cartesian(ylim = c(0, 5)) + #standardize y axis
+          
+          theme(panel.grid.major = element_blank(),
+                panel.grid.minor =  element_blank(),
+                  panel.background = element_rect(fill = 'white'),
+                  axis.line = element_line(colour = "black"),
+                  text = element_text(color = "black", size = 10),
+                  plot.title = element_text(face = "italic", size = 11),
+                  legend.position = "top",
+                  axis.title.x = element_blank(),
+                  axis.text.x = element_text(angle = 63, hjust=1, face = "italic"),
+                  axis.text = element_text( color = "black", size = 10), 
+                  #axis.title = element_text(size = 16),  
+                  )  + 
+          #dark_theme_noline +
+          xlab("Playback") +
+          ylab("Response scores") +
+          ggtitle(paste(unique(d$Species_full)," (n = ", length(unique(d$ID)), ")", sep ="") )  
+           
+       plot = plot +    geom_point(data = Boot_sums,
+                                          aes( x= Playback,
+                                               y = mean),
+                                          color = "black",
+                                          shape = 4,
+                                          size = 1 ) +
+           
+           
+      #if more than n individuals, add bootstrapped 95% CI's to plot
+         geom_errorbar( data = Boot_sums,
+                                aes( x=Playback,
+                                     ymin = low,
+                                     ymax =high,
+                                     y = NULL ),
+                                color = "black",
+                                width=.2,
+                                size=.25)
+          
+      # #make pdfs of plots (85, 129, or 177 mm width to fit in 1-3 columns dimensions)  
+       # ggsave("testplot.jpg",  width = 177, height =800, units = "mm")
+                 plot = plot +   ggsave(filename = paste(ifelse(ranked,"ranked", "unranked"), "all bats", "responses_to_playbacks", ".jpg", sep = ""), width = 177, height =800, units = "mm" )
+                 
+      #add plot to list           
+     list(plot)
+      
+}
+
+unranked_plot <- plot_bats(d = g_u, ranked = FALSE)
+unranked_plot
+ranked_plot <- plot_bats(d= g_u, ranked = TRUE)
+ranked_plot
+
+
+
+#make facet titles italic and add n's
+# paste(unique(.$Species_full)," (n = ", length(unique(.$ID)), ")", sep ="")
+#arrange bats from highest mean response to lowestX
+#collapse 3 into 2 (use a diff response scale)
+#respace dots
+
+###
+# #Create an object using as_labeller(). If the column names begin with a number or contain spaces or special characters, don't forget to use back tick marks:
+# # Necessary to put RH% into the facet labels
+# hum_names <- as_labeller(
+#      c(`50` = "RH% 50", `60` = "RH% 60",`70` = "RH% 70", 
+#        `80` = "RH% 80",`90` = "RH% 90", `100` = "RH% 100"))
+# #Add to the ggplot:
+#     ggplot(dataframe, aes(x = Temperature.C, y = fit)) + 
+#         geom_line() + 
+#         facet_wrap(~Humidity.RH., nrow = 2, labeller = facet_names)
+
+# ggtitle(paste(unique(.$Species_full)," (n = ", length(unique(.$ID)), ")", sep ="") )
+#make list that reads "Species full = "Species full (n= N)
+
+facet_names = n %>%
+      mutate(facet_names = paste(Species_full, " = " , Species_full, " (n = ", n, ")" ,  sep = ""  )) %>% select(facet_names)
+
+
+# figure out how to add quotes around Species full (n= n_ )
+  n<-      n %>%
+       mutate(facet_names = paste(Species_full, " (n = ", n , ")", sep = ""   )) =
+
+labeller =  as_labeller(facet_names)
+labeller = label_bquote(italic(.(sex))~subjects))
+
+labeller = label_bquote(italic(.(Species_full))~subjects))
+# .
+# length(unique(.$ID)
+# abeller = labeller(cyl = 
+#     c("4" = "condition: 4",
+#       "6" = "condition: 6",
+#       "8" = "condition: 8"))       
+
+  #labeller = label_bquote(italic(.(factor(Species_full, levels = Species_levels)))),
+                      #labeller =  as_labeller(facet_names),
+
+lev <- n$Species_full
+lab <-      paste(n$Species_full, " (n = ", n$n , ")", sep = ""   )
+
+names(lab) <- lev
+     
+
+label_facet <- function(original_var, custom_name){
+  lev <- levels(as.factor(original_var))
+  lab <- paste0(lev, ": ", custom_name)
+  names(lab) <- lev
+  return(lab)  
+}
+
+facet_wrap(~cyl, labeller = labeller(Species_full = label_facet(original_var = n$Species_full, custom_name = "grouping")))
+
+facet_wrap(~cyl, labeller = labeller(cyl = label_facet(df$cyl, "grouping")))
+###
+```
+
 
 
 dot plot attempt
