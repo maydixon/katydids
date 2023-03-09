@@ -422,6 +422,11 @@ g_u <- g_u %>%
       mutate(Playback = replace(Playback, Playback =="D. gigliotosi ", "D. gigliotosi")) %>%
       mutate(Playback = replace(Playback, Playback =="Anaxipha sp. ", "Anaxipha sp."))
 
+#Fix misspelled "Lampronycteris brachyotis" and "Lonchorhina aurita"
+g_u <- g_u %>%
+      mutate(Playback = replace(Species_full, Species_full == "Lampronycteris brachiotis", "Lampronycteris brachyotis" )) %>%
+      mutate(Playback = replace(Species_full, Species_full == "Lonchorina aurita", "Lonchorhina aurita"))
+
 
 #sex has M, F, "M?" and "NA"
 g_u %>% select(Sex) %>% unique() 
@@ -553,8 +558,8 @@ g_u <- g_u %>% mutate(Species_short = case_when(
       Species_full == "Artibeus jamaicensis" ~ "A. jamaicensis", 
       Species_full == "Gardnerycteris crenulatum" ~ "Ga. crenulatum",
       Species_full == "Glyphonycteris daviesi" ~ "Gl. daviesi",
-      Species_full == "Lampronycteris brachiotis" ~ "La. brachiotis",
-      Species_full == "Lonchorina aurita" ~ "Lon. aurita",
+      Species_full == "Lampronycteris brachyotis" ~ "La. brachyotis",
+      Species_full == "Lonchorhina aurita" ~ "Lon. aurita",
       Species_full == "Lophostoma brasiliense"  ~ "Lop. brasiliense" ,
       Species_full == "Lophostoma silvicolum" ~ "Lop. silvicolum",
       Species_full == "Micronycteris hirsuta" ~ "M. hirsuta",
@@ -2024,7 +2029,7 @@ g_u_p_PH
 
 ```
 
-Lampronycteris brachiotis
+Lampronycteris brachyotis
 
 ```{r, eval = FALSE}
 
@@ -2032,7 +2037,7 @@ g_u_p_LaB <- ggplot(data = g_u[g_u$Species =="Lamp_brach",], aes(x = Playback, y
 
 g_u_p_LaB <- g_u_p_LaB + G3 +C3 + TM4 + Xlab2 + Ylab2  +cLaB + #all parameters for general data
       
-      geom_point(data =Resp_avg[Resp_avg$Species_full =="Lampronycteris brachiotis",], mapping=aes(x = Playback, y = Resp_average), color = "black", shape=17, size = 4 ) #parameters for the averages
+      geom_point(data =Resp_avg[Resp_avg$Species_full =="Lampronycteris brachyotis",], mapping=aes(x = Playback, y = Resp_average), color = "black", shape=17, size = 4 ) #parameters for the averages
      
 g_u_p_LaB
 
@@ -2058,7 +2063,7 @@ g_u_p_Trn
 
 ```
 
-Lonchorina aurita
+Lonchorhina aurita
 
 ```{r eval=F, echo=F}
 
@@ -2066,7 +2071,7 @@ g_u_p_Loa <- ggplot(data = g_u[g_u$Species =="Lonc_auri",], aes(x = Playback, y 
 
 g_u_p_Loa <- g_u_p_Loa + G3 +C3 + TM3 + Xlab2 + Ylab2  +cLA + #all parameters for general data
       
-      geom_point(data =Resp_avg[Resp_avg$Species_full =="Lonchorina aurita",], mapping=aes(x = Playback, y = Resp_average), color = "black", shape=17, size = 4 ) #parameters for the averages
+      geom_point(data =Resp_avg[Resp_avg$Species_full =="Lonchorhina aurita",], mapping=aes(x = Playback, y = Resp_average), color = "black", shape=17, size = 4 ) #parameters for the averages
      
 g_u_p_Loa
 #rm(g_u_p_Loa)
