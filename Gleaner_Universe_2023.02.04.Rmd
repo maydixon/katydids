@@ -424,8 +424,8 @@ g_u <- g_u %>%
 
 #Fix misspelled "Lampronycteris brachyotis" and "Lonchorhina aurita"
 g_u <- g_u %>%
-      mutate(Playback = replace(Species_full, Species_full == "Lampronycteris brachiotis", "Lampronycteris brachyotis" )) %>%
-      mutate(Playback = replace(Species_full, Species_full == "Lonchorina aurita", "Lonchorhina aurita"))
+      mutate(Species_full = replace(Species_full, Species_full == "Lampronycteris brachiotis", "Lampronycteris brachyotis" )) %>%
+      mutate(Species_full = replace(Species_full, Species_full == "Lonchorina aurita", "Lonchorhina aurita"))
 
 
 #sex has M, F, "M?" and "NA"
@@ -991,7 +991,15 @@ Faceted bat plots
 # Boots = add bootstrapped values?
 #N_min_mean /int: if adding boots, what should the minimum sample size be for adding the boot means, boot 95% confidence intervals?
 
-facet_plot_bats <- function(d=d, ranked= FALSE, Boots = FALSE, N_min_mean = NULL, N_min_int = NULL, Width = 177, Height =800, title = c("all_bats_", "over_10n_", "")){
+facet_plot_bats <- function(d=d,
+                            ranked= FALSE,
+                            Boots = FALSE,
+                            N_min_mean = NULL,
+                            N_min_int = NULL,
+                            legend_position ="top",
+                            Width = 177,
+                            Height =800,
+                            title = c("all_bats_", "over_10n_", "")){
  
       
 # sample size per species
@@ -1099,7 +1107,7 @@ Species_levels <- levels(fct_reorder( d$Species_full, -d$Response, .fun='mean'))
                   axis.line = element_line(colour = "black"),
                   text = element_text(color = "black", size = 10),
                   plot.title = element_text(face = "italic", size = 11),
-                  legend.position = "top",
+                  legend.position = legend_position,
                   axis.title.x = element_blank(),
                   axis.text.x = element_text(angle = 63, hjust=1, face = "italic"),
                   axis.text = element_text( color = "black", size = 10), 
@@ -1212,6 +1220,102 @@ unranked_plot_boot <- facet_plot_bats(d = g_u, ranked = FALSE, Boots = TRUE, N_m
 # 
 # facet_wrap(~cyl, labeller = labeller(cyl = label_facet(df$cyl, "grouping")))
 ###### IGNORE ABOVE ################
+```
+Things of logical way to divide the plots up. If fitting into 2 pages, 1 col each
+
+Bats that landed on something or are known or likely  gleaners:
+"Tra. cirrhosus"
+   "Lop. silvicolum"
+  "M. hirsuta"      
+ "M. microtis"  
+ "Lop. brasiliense"
+   "To. saurophila"
+ "M. schmidtorum" 
+
+Opportunistic or unknown:
+"P. hastatus"   
+"P. discolor"
+"La. brachyotis"
+   "Tri. nicefori"
+    "Ga. crenulatum"
+   "Lon. aurita"     
+    "Gl. daviesi"
+
+  "A. jamaicensis"
+
+Reasonably split plots:2 groups
+```{r}
+# probable gleaners
+      g_u %>%
+      filter(Species_full %in% c("Trachops cirrhosus",
+                                "Lophostoma silvicolum",
+                                "Lophostoma brasiliense",
+                                "Micronycteris hirsuta",
+                                "Micronycteris microtis",
+                                "Micronycteris schmidtorum",
+                                "Tonatia saurophila" )) %>%
+       mutate(Species_full = factor(Species_full,
+                                    c("Trachops cirrhosus",
+                                "Lophostoma silvicolum",
+                                "Lophostoma brasiliense",
+                                "Micronycteris hirsuta",
+                                "Micronycteris microtis",
+                                "Micronycteris schmidtorum",
+                                "Tonatia saurophila" ), ordered = TRUE )) %>%
+      facet_plot_bats(d = ., ranked = FALSE, Boots = FALSE, Height = 238, title ="confirmed_gleaners_")
+ #up to 238 mm height) 
+      
+
+#unknown and omnivores
+g_u %>%
+      filter(Species_full %in% c("Phyllostomus hastatus",
+                                  "Phyllostomus discolor",
+                                  "Lampronycteris brachyotis",
+                                  "Trinycteris nicefori",
+                                  "Gardnerycteris crenulatum",
+                                  "Lonchorhina aurita",
+                                  "Glyphonycteris daviesi",
+                                  "Artibeus jamaicensis")) %>%
+       mutate(Species_full = factor(Species_full,
+                                    c("Phyllostomus hastatus",
+                                  "Phyllostomus discolor",
+                                  "Lampronycteris brachyotis",
+                                  "Trinycteris nicefori",
+                                  "Gardnerycteris crenulatum",
+                                  "Lonchorhina aurita",
+                                  "Glyphonycteris daviesi",
+                                  "Artibeus jamaicensis"), ordered = TRUE )) %>%
+facet_plot_bats(d = ., ranked = FALSE, Boots = FALSE, legend_position ="none", Height = 238, title ="OtherOrUnknown_")
+
+
+#change function so I can reorder the facets from the fn #test whether this even works
+```
+  
+  
+3 groups
+Bats that landed on something:
+"Tra. cirrhosus" ,
+"Lop. silvicolum",
+  "M. hirsuta"    ,  
+ "M. microtis"  ,
+ "Lop. brasiliense"
+
+Did not land, possibles:
+   "To. saurophila",
+ "M. schmidtorum" ,
+ "Ga. crenulatum",
+ "Lon. aurita"     ,
+  "Gl. daviesi"
+
+At least some fruit:
+"P. hastatus"   ,
+"P. discolor",
+"La. brachyotis",
+"Tri. nicefori",
+   "A. jamaicensis",
+
+```{r}
+
 ```
 
 plot with species with >10 bats 
